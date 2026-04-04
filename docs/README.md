@@ -8,7 +8,7 @@ The goal is to make development more visible and collaborative by turning projec
 
 ## Overview
 
-The platform focuses on making development visible and collaborative. Users can create projects, post updates, interact with other developers, and follow work they find interesting.
+The platform focuses on making development visible and collaborative by allowing developers to share progress, get feedback, and build alongside others. Users can create projects, post updates, interact with other developers, and follow work they find interesting.
 
 ---
 
@@ -54,6 +54,159 @@ React (frontend) ---> FastAPI (backend) ---> MongoDB
 * MongoDB Atlas (production)
 * Render (backend deployment)
 * Vercel (frontend deployment)
+
+---
+
+## System Diagrams
+
+### Entity Class Diagram
+
+> Left-to-right layout is used to keep the connectors as straight as Mermaid allows.
+
+```mermaid
+classDiagram
+    direction LR
+
+    class User {
+        +id: string
+        +email: string
+        +username: string
+        +bio: string
+        +role: string
+        +is_online: bool
+        +created_at: datetime
+    }
+
+    class Project {
+        +id: string
+        +user_id: string
+        +title: string
+        +description: string
+        +stage: idea|in_progress|completed
+        +support_needed: string
+        +like_count: int
+        +created_at: datetime
+    }
+
+    class Update {
+        +id: string
+        +project_id: string
+        +user_id: string
+        +content: string
+        +like_count: int
+        +created_at: datetime
+    }
+
+    class Comment {
+        +id: string
+        +project_id: string
+        +user_id: string
+        +parent_id: string
+        +content: string
+        +like_count: int
+        +created_at: datetime
+    }
+
+    class CollaborationRequest {
+        +id: string
+        +project_id: string
+        +requester_id: string
+        +message: string
+        +status: pending|accepted|rejected
+        +created_at: datetime
+    }
+
+    class Like {
+        +id: string
+        +user_id: string
+        +project_id: string?
+        +update_id: string?
+        +comment_id: string?
+        +created_at: datetime
+    }
+
+    class Follow {
+        +id: string
+        +follower_id: string
+        +following_id: string
+        +created_at: datetime
+    }
+
+    class LoginAttempt {
+        +identifier: string
+        +count: int
+        +last_attempt: datetime
+    }
+
+    class EmailLog {
+        +id: string
+        +to: string
+        +subject: string
+        +email_type: string
+        +status: mocked|sent
+        +sent_at: datetime
+    }
+
+    User "1" --> "0..*" Project : owns
+    User "1" --> "0..*" Update : posts
+    User "1" --> "0..*" Comment : writes
+    User "1" --> "0..*" CollaborationRequest : sends
+    User "1" --> "0..*" Like : creates
+    User "1" --> "0..*" Follow : starts
+    User "1" --> "0..*" EmailLog : receives
+
+    Project "1" --> "0..*" Update : contains
+    Project "1" --> "0..*" Comment : receives
+    Project "1" --> "0..*" CollaborationRequest : accepts
+
+    Comment "1" --> "0..*" Comment : replies
+
+    Follow "0..*" --> "1" User : follows
+    Like "0..*" --> "0..1" Project : targets
+    Like "0..*" --> "0..1" Update : targets
+    Like "0..*" --> "0..1" Comment : targets
+    LoginAttempt --> User : protects auth
+```
+
+### Sequence Diagram
+
+```mermaid
+sequenceDiagram
+    actor Builder
+    participant UI as React Frontend
+    participant API as FastAPI API
+    participant DB as MongoDB
+    participant WS as WebSocket Manager
+    actor Community as Other User / Client
+
+    Builder->>UI: Sign in and open dashboard
+    UI->>API: POST /api/auth/login
+    API->>DB: Verify user and login state
+    DB-->>API: User record
+    API-->>UI: Auth cookies + user payload
+
+    Builder->>UI: Create project
+    UI->>API: POST /api/projects
+    API->>DB: Insert project document
+    DB-->>API: Project saved
+    API->>WS: broadcast(new_project)
+    WS-->>Community: Push realtime event
+    API-->>UI: Created project response
+
+    Community->>UI: Open project details
+    UI->>API: GET /api/projects/{project_id}
+    API->>DB: Load project, updates, comments
+    DB-->>API: Project data
+    API-->>UI: Project detail payload
+
+    Community->>UI: Request collaboration
+    UI->>API: POST /api/projects/{project_id}/collaborate
+    API->>DB: Save collaboration request
+    API->>DB: Log notification email
+    API->>WS: broadcast(activity update)
+    WS-->>Builder: Notify project owner
+    API-->>UI: Collaboration request saved
+```
 
 ---
 
@@ -153,7 +306,7 @@ Uses `vercel.json` for routing and API proxying.
 
 ## Notes
 
-This project was built with a focus on clean structure, separation of concerns, and maintainability. The goal was to simulate a real-world full-stack setup rather than just a demo application.
+This project was built with a focus on clean structure, separation of concerns, and maintainability. The goal was to simulate a real-world full-stack setup rather than just a demo application. The system design was planned using UML diagrams before implementation to ensure clear relationships between entities and scalable architecture decisions.
 
 ---
 
