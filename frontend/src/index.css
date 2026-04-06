@@ -1,0 +1,226 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@400;500;600;700;800;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+    margin: 0;
+    font-family: 'IBM Plex Sans', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    font-family: 'Outfit', sans-serif;
+}
+
+code, .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+}
+
+@layer base {
+    :root {
+        --background: 0 0% 100%;
+        --foreground: 0 0% 0%;
+        --card: 0 0% 100%;
+        --card-foreground: 0 0% 0%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 0 0% 0%;
+        --primary: 134 61% 41%;
+        --primary-foreground: 0 0% 100%;
+        --secondary: 240 5% 96%;
+        --secondary-foreground: 0 0% 0%;
+        --muted: 240 5% 96%;
+        --muted-foreground: 240 4% 46%;
+        --accent: 240 5% 96%;
+        --accent-foreground: 0 0% 0%;
+        --destructive: 0 84% 60%;
+        --destructive-foreground: 0 0% 100%;
+        --border: 0 0% 89.8%;
+        --input: 0 0% 89.8%;
+        --ring: 134 61% 41%;
+        --radius: 0;
+        --success: 134 61% 41%;
+        --warning: 38 92% 50%;
+    }
+}
+
+@layer base {
+    * {
+        @apply border-border;
+    }
+    body {
+        @apply bg-background text-foreground;
+    }
+}
+
+/* Neo-Brutalist Card Styles */
+.card-brutalist {
+    background-color: white;
+    border: 2px solid black;
+    box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);
+    transition: all 0.2s;
+}
+
+.card-brutalist:hover {
+    transform: translateY(-2px);
+    box-shadow: 6px 6px 0px 0px rgba(0,0,0,1);
+}
+
+/* Primary Button Brutalist */
+.btn-primary-brutalist {
+    background-color: #28A745;
+    color: white;
+    border: 2px solid black;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.75rem 1.5rem;
+    box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);
+    transition: all 0.2s;
+    cursor: pointer;
+}
+
+.btn-primary-brutalist:hover {
+    background-color: #218838;
+}
+
+.btn-primary-brutalist:active {
+    transform: translateY(2px);
+    box-shadow: 2px 2px 0px 0px rgba(0,0,0,1);
+}
+
+/* Secondary Button Brutalist */
+.btn-secondary-brutalist {
+    background-color: white;
+    color: black;
+    border: 2px solid black;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.75rem 1.5rem;
+    transition: all 0.2s;
+    cursor: pointer;
+}
+
+.btn-secondary-brutalist:hover {
+    background-color: black;
+    color: white;
+}
+
+/* Input Brutalist */
+.input-brutalist {
+    background-color: white;
+    border: 2px solid black;
+    padding: 0.75rem;
+    font-family: 'JetBrains Mono', monospace;
+    box-shadow: 2px 2px 0px 0px rgba(0,0,0,1);
+}
+
+.input-brutalist:focus {
+    outline: none;
+    border-color: #28A745;
+}
+
+/* Feed Item */
+.feed-item {
+    border-bottom: 2px solid black;
+    padding: 1.5rem;
+    transition: background-color 0.2s;
+}
+
+.feed-item:hover {
+    background-color: #f9fafb;
+}
+
+/* Celebration Wall Card */
+.celebration-card {
+    background-color: black;
+    color: white;
+    border: 2px solid #28A745;
+    padding: 2rem;
+    box-shadow: 8px 8px 0px 0px #28A745;
+}
+
+/* Badge Styles */
+.badge-idea {
+    background-color: #e5e7eb;
+    color: black;
+    border: 1px solid black;
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: bold;
+}
+
+.badge-in-progress {
+    background-color: #facc15;
+    color: black;
+    border: 1px solid black;
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: bold;
+}
+
+.badge-completed {
+    background-color: #28A745;
+    color: white;
+    border: 1px solid black;
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: bold;
+}
+
+/* Raise Hand Badge */
+.raise-hand-badge {
+    background-color: #28A745;
+    color: white;
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    border: 1px solid black;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* Header */
+.header-brutalist {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background-color: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(12px);
+    border-bottom: 2px solid black;
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f4f4f5;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #000;
+    border: 1px solid #000;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #28A745;
+}
+
+@layer base {
+    [data-debug-wrapper="true"] {
+        display: contents !important;
+    }
+}
