@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { Send, Heart, CornerDownRight } from 'lucide-react';
@@ -13,6 +13,10 @@ const CommentSection = ({ projectId, comments: initialComments, onCommentAdded }
     const [replyingTo, setReplyingTo] = useState(null);
     const [replyContent, setReplyContent] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
+
+    useEffect(() => {
+        setComments(initialComments || []);
+    }, [initialComments]);
 
     const formatDate = (dateString) => {
         if (!dateString) return '';
@@ -32,9 +36,12 @@ const CommentSection = ({ projectId, comments: initialComments, onCommentAdded }
                 { withCredentials: true }
             );
             const newComment = { ...response.data, replies: [] };
-            setComments(prev => [newComment, ...prev]);
+            if (onCommentAdded) {
+                onCommentAdded(newComment);
+            } else {
+                setComments(prev => [newComment, ...prev]);
+            }
             setContent('');
-            if (onCommentAdded) onCommentAdded(newComment);
             toast.success('Comment added!');
         } catch (error) {
             toast.error(error.response?.data?.detail || 'Failed to add comment');

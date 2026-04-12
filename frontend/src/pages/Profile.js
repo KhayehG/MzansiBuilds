@@ -30,6 +30,7 @@ const Profile = () => {
     });
     const [newSkill, setNewSkill] = useState('');
     const [isSaving, setIsSaving] = useState(false);
+    const [isUploadingImage, setIsUploadingImage] = useState(false);
 
     const targetUserId = userId || currentUser?.id;
     const isOwnProfile = isAuthenticated && currentUser?.id === targetUserId;
@@ -124,7 +125,20 @@ const Profile = () => {
         }));
     };
 
-    const handleProfileImageSelection = (event) => {
+    const readFileAsDataUrl = (file) => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            if (typeof reader.result === 'string') {
+                resolve(reader.result);
+                return;
+            }
+            reject(new Error('Invalid file data'));
+        };
+        reader.onerror = () => reject(new Error('Failed to read the selected image'));
+        reader.readAsDataURL(file);
+    });
+
+    const handleProfileImageSelection = async (event) => {
         const file = event.target.files?.[0];
         if (!file) return;
         if (!file.type.startsWith('image/')) {
@@ -136,14 +150,46 @@ const Profile = () => {
             return;
         }
 
-        const reader = new FileReader();
-        reader.onload = () => {
-            if (typeof reader.result === 'string') {
-                setEditData(prev => ({ ...prev, profile_picture_url: reader.result }));
+        setIsUploadingImage(true);
+        try {
+            const signatureResponse = await axios.get(`${API_URL}/api/auth/cloudinary/signature`, {
+                params: { folder: `users/${targetUserId || 'profile-images'}` },
+                withCredentials: true,
+            });
+
+            const { cloud_name: cloudName, api_key: apiKey, timestamp, signature, folder, resource_type: resourceType } = signatureResponse.data;
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('api_key', apiKey);
+            formData.append('timestamp', timestamp);
+            formData.append('signature', signature);
+            formData.append('folder', folder);
+
+            const uploadResponse = await axios.post(
+                `https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`,
+                formData,
+            );
+
+            setEditData(prev => ({ ...prev, profile_picture_url: uploadResponse.data.secure_url }));
+            toast.success('Image uploaded. Save your profile to apply it.');
+        } catch (error) {
+            try {
+                const previewUrl = await readFileAsDataUrl(file);
+                setEditData(prev => ({ ...prev, profile_picture_url: previewUrl }));
+            } catch (previewError) {
+                toast.error(previewError.message || 'Failed to read the selected image');
+                setIsUploadingImage(false);
+                return;
             }
-        };
-        reader.onerror = () => toast.error('Failed to read the selected image');
-        reader.readAsDataURL(file);
+
+            if (error.response?.status === 503) {
+                toast.info('Cloud image upload is not configured yet. Using a local preview for now.');
+            } else {
+                toast.error(error.response?.data?.detail || 'Image upload failed, but a local preview is ready.');
+            }
+        } finally {
+            setIsUploadingImage(false);
+        }
     };
 
     const formatDate = (dateString) => {
@@ -258,8 +304,13 @@ const Profile = () => {
                                             className="mt-2 block w-full text-xs"
                                         />
                                         <p className="text-[10px] text-text-secondary mt-1">
-                                            Paste an image URL or choose a local file for testing.
+                                            Paste an image URL, or upload a file to Cloudinary when it is configured.
                                         </p>
+                                        {isUploadingImage && (
+                                            <p className="text-[10px] text-primary mt-1 font-bold uppercase tracking-wider">
+                                                Uploading image...
+                                            </p>
+                                        )}
                                     </div>
                                     <div>
                                         <label className="block text-xs uppercase tracking-widest font-bold mb-1">Skills</label>
@@ -306,7 +357,7 @@ const Profile = () => {
                                     <div className="flex gap-2">
                                         <button
                                             onClick={handleSaveProfile}
-                                            disabled={isSaving}
+                                            disabled={isSaving || isUploadingImage}
                                             className="btn-primary-brutalist py-2 px-3 text-xs flex-1 flex items-center justify-center gap-1"
                                             data-testid="save-profile"
                                         >

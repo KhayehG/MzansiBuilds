@@ -69,15 +69,50 @@ const ProjectDetail = () => {
     }, [fetchData]);
 
     // Handle real-time updates
+    const mergeIncomingComment = useCallback((existingComments, incomingComment) => {
+        const alreadyExists = existingComments.some(comment => (
+            comment.id === incomingComment.id
+            || (comment.replies || []).some(reply => reply.id === incomingComment.id)
+        ));
+
+        if (alreadyExists) {
+            return existingComments;
+        }
+
+        if (!incomingComment.parent_id) {
+            return [incomingComment, ...existingComments];
+        }
+
+        let parentFound = false;
+        const updatedComments = existingComments.map(comment => {
+            if (comment.id !== incomingComment.parent_id) {
+                return comment;
+            }
+
+            parentFound = true;
+            return {
+                ...comment,
+                replies: [...(comment.replies || []), incomingComment],
+                reply_count: (comment.reply_count || 0) + 1,
+            };
+        });
+
+        return parentFound ? updatedComments : existingComments;
+    }, []);
+
     useEffect(() => {
         if (lastMessage && lastMessage.data?.project_id === projectId) {
             if (lastMessage.type === 'new_update') {
-                setUpdates(prev => [lastMessage.data, ...prev]);
+                setUpdates(prev => (
+                    prev.some(update => update.id === lastMessage.data.id)
+                        ? prev
+                        : [lastMessage.data, ...prev]
+                ));
             } else if (lastMessage.type === 'new_comment') {
-                setComments(prev => [lastMessage.data, ...prev]);
+                setComments(prev => mergeIncomingComment(prev, lastMessage.data));
             }
         }
-    }, [lastMessage, projectId]);
+    }, [lastMessage, projectId, mergeIncomingComment]);
 
     const getStageBadge = (stage) => {
         switch (stage) {
@@ -129,6 +164,11 @@ const ProjectDetail = () => {
                 { withCredentials: true }
             );
             toast.success('Collaboration request sent!');
+            setProject(prev => prev ? {
+                ...prev,
+                has_requested_collab: true,
+                collaboration_status: 'pending',
+            } : prev);
             setShowCollabForm(false);
             setCollabMessage('');
             fetchData();
@@ -167,7 +207,11 @@ const ProjectDetail = () => {
     };
 
     const isOwner = isAuthenticated && user?.id === project?.user_id;
-    const hasRequestedCollab = collaborations.some(c => c.requester_id === user?.id && c.status === 'pending');
+    const collaborationStatus = project?.collaboration_status;
+    const hasRequestedCollab = Boolean(
+        project?.has_requested_collab
+        || collaborations.some(c => c.requester_id === user?.id && c.status === 'pending')
+    );
 
     const onCommentAdded = (newComment) => {
         setComments(prev => [newComment, ...prev]);
@@ -268,7 +312,7 @@ const ProjectDetail = () => {
                             </div>
                         </Link>
 
-                        {isAuthenticated && !isOwner && !hasRequestedCollab && (
+                        {isAuthenticated && !isOwner && !hasRequestedCollab && collaborationStatus !== 'accepted' && (
                             <button
                                 onClick={() => setShowCollabForm(!showCollabForm)}
                                 className="btn-primary-brutalist py-2 px-4 flex items-center gap-2"
@@ -281,6 +325,18 @@ const ProjectDetail = () => {
                         {hasRequestedCollab && (
                             <span className="raise-hand-badge py-2">
                                 <CheckCircle className="w-4 h-4" /> Request Sent
+                            </span>
+                        )}
+
+                        {collaborationStatus === 'accepted' && (
+                            <span className="raise-hand-badge py-2">
+                                <CheckCircle className="w-4 h-4" /> Collaboration Accepted
+                            </span>
+                        )}
+
+                        {collaborationStatus === 'rejected' && (
+                            <span className="inline-flex items-center gap-2 border-2 border-black bg-white px-3 py-2 text-sm font-bold uppercase tracking-wider text-black">
+                                <AlertCircle className="w-4 h-4" /> Request Declined
                             </span>
                         )}
                     </div>
