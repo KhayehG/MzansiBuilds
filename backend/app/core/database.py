@@ -29,6 +29,12 @@ PERSISTED_COLLECTIONS = (
     "email_logs",
 )
 
+if IS_PRODUCTION and USE_MOCK_DB:
+    raise RuntimeError("USE_MOCK_DB must be false in production.")
+
+if IS_PRODUCTION and not mongo_url:
+    raise RuntimeError("MONGO_URL must be set in production.")
+
 if USE_MOCK_DB or not mongo_url:
     from mongomock_motor import AsyncMongoMockClient
 

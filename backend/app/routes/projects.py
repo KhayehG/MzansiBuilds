@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from bson import ObjectId
 from fastapi import APIRouter, HTTPException, Request
 
@@ -65,12 +67,28 @@ async def create_project(project_data: ProjectCreate, request: Request):
 
 
 @router.get("")
-async def get_projects(stage: str | None = None, user_id: str | None = None, request: Request = None):
+async def get_projects(
+    stage: str | None = None,
+    user_id: str | None = None,
+    q: str | None = None,
+    request: Request = None,
+):
     query: dict = {}
     if stage:
         query["stage"] = stage
     if user_id:
         query["user_id"] = user_id
+    if q and q.strip():
+        pattern = {"$regex": re.escape(q.strip()), "$options": "i"}
+        matching_users = await db.users.find({"username": pattern}, {"_id": 1}).to_list(100)
+        search_filters = [
+            {"title": pattern},
+            {"description": pattern},
+            {"support_needed": pattern},
+        ]
+        if matching_users:
+            search_filters.append({"user_id": {"$in": [str(user["_id"]) for user in matching_users]}})
+        query["$or"] = search_filters
 
     projects = await db.projects.find(query).sort("created_at", -1).to_list(100)
     user_ids = list({project["user_id"] for project in projects})
@@ -120,8 +138,17 @@ async def get_project(project_id: str, request: Request):
     )
     current_user = await get_optional_user(request)
     is_liked = False
+    has_requested_collab = False
+    collaboration_status = None
     if current_user:
         is_liked = await db.likes.find_one({"user_id": current_user["_id"], "project_id": project_id}) is not None
+        if current_user["_id"] != project["user_id"]:
+            collab_request = await db.collaboration_requests.find_one(
+                {"project_id": project_id, "requester_id": current_user["_id"]}
+            )
+            if collab_request:
+                collaboration_status = collab_request.get("status")
+                has_requested_collab = collaboration_status == "pending"
 
     return {
         "id": str(project["_id"]),
@@ -136,6 +163,8 @@ async def get_project(project_id: str, request: Request):
         "like_count": project.get("like_count", 0),
         "comment_count": project.get("comment_count", 0),
         "is_liked": is_liked,
+        "has_requested_collab": has_requested_collab,
+        "collaboration_status": collaboration_status,
         "created_at": project.get("created_at", ""),
     }
 
