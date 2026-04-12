@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { useWebSocket } from '../contexts/WebSocketContext';
 import { useAuth } from '../contexts/AuthContext';
 import Navbar from '../components/Navbar';
 import ProjectCard from '../components/ProjectCard';
-import { Rocket, Filter, RefreshCw, Zap } from 'lucide-react';
+import { Rocket, Filter, RefreshCw, Zap, Search, Users } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { API_URL } from '../lib/api';
@@ -16,24 +17,43 @@ const Dashboard = () => {
     const [filter, setFilter] = useState('all'); // all, idea, in_progress, completed
     const [viewMode, setViewMode] = useState('feed'); // feed, projects
     const [feedMode, setFeedMode] = useState('global'); // global, following
+    const [searchTerm, setSearchTerm] = useState('');
+    const [builders, setBuilders] = useState([]);
     const { lastMessage, isConnected } = useWebSocket();
     const { isAuthenticated } = useAuth();
 
     const fetchData = useCallback(async () => {
         try {
-            const [feedRes, projectsRes] = await Promise.all([
+            const projectParams = new URLSearchParams();
+            if (filter !== 'all') {
+                projectParams.set('stage', filter);
+            }
+            if (searchTerm.trim()) {
+                projectParams.set('q', searchTerm.trim());
+            }
+
+            const requests = [
                 axios.get(`${API_URL}/api/feed?mode=${feedMode}`, { withCredentials: true }),
-                axios.get(`${API_URL}/api/projects${filter !== 'all' ? `?stage=${filter}` : ''}`, { withCredentials: true })
-            ]);
+                axios.get(`${API_URL}/api/projects${projectParams.toString() ? `?${projectParams.toString()}` : ''}`, { withCredentials: true }),
+            ];
+
+            if (searchTerm.trim()) {
+                requests.push(
+                    axios.get(`${API_URL}/api/users?q=${encodeURIComponent(searchTerm.trim())}`, { withCredentials: true })
+                );
+            }
+
+            const [feedRes, projectsRes, usersRes] = await Promise.all(requests);
             setFeed(feedRes.data);
             setProjects(projectsRes.data);
+            setBuilders(usersRes?.data || []);
         } catch (error) {
             console.error('Error fetching data:', error);
             toast.error('Failed to load feed');
         } finally {
             setLoading(false);
         }
-    }, [filter, feedMode]);
+    }, [filter, feedMode, searchTerm]);
 
     useEffect(() => {
         fetchData();
@@ -59,9 +79,24 @@ const Dashboard = () => {
         return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
     };
 
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+
     const filteredProjects = filter === 'all' 
         ? projects 
         : projects.filter(p => p.stage === filter);
+
+    const filteredFeed = normalizedSearch
+        ? feed.filter((item) => {
+            const searchableText = [
+                item.title,
+                item.description,
+                item.content,
+                item.project_title,
+                item.username,
+            ].filter(Boolean).join(' ').toLowerCase();
+            return searchableText.includes(normalizedSearch);
+        })
+        : feed;
 
     return (
         <div className="min-h-screen bg-background">
@@ -134,6 +169,19 @@ const Dashboard = () => {
                         </div>
                     )}
 
+                    {/* Search */}
+                    <div className="flex items-center gap-2 min-w-[240px] flex-1">
+                        <Search className="w-4 h-4 text-text-secondary" />
+                        <input
+                            type="search"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="input-brutalist py-2 text-sm w-full"
+                            placeholder="Search projects or builders"
+                            data-testid="search-input"
+                        />
+                    </div>
+
                     {/* Filter */}
                     <div className="flex items-center gap-2">
                         <Filter className="w-4 h-4 text-text-secondary" />
@@ -159,6 +207,42 @@ const Dashboard = () => {
                         Refresh
                     </button>
                 </div>
+
+                {searchTerm.trim() && (
+                    <div className="mb-6 space-y-4" data-testid="search-results-summary">
+                        <p className="text-sm font-mono text-text-secondary">
+                            Showing results for <span className="font-bold text-black">“{searchTerm.trim()}”</span>
+                        </p>
+
+                        <div className="card-brutalist p-4">
+                            <div className="flex items-center gap-2 mb-3">
+                                <Users className="w-4 h-4 text-primary" />
+                                <h2 className="font-heading font-bold uppercase tracking-wide">Builders</h2>
+                            </div>
+                            {builders.length > 0 ? (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    {builders.map((builder) => (
+                                        <Link
+                                            key={builder.id}
+                                            to={`/profile/${builder.id}`}
+                                            className="border-2 border-black bg-white p-3 hover:bg-surface transition-colors"
+                                        >
+                                            <p className="font-bold">@{builder.username}</p>
+                                            <p className="text-sm text-text-secondary line-clamp-2 mt-1">
+                                                {builder.bio || 'No bio yet.'}
+                                            </p>
+                                            <p className="text-xs font-mono mt-2 text-text-secondary">
+                                                {builder.project_count || 0} projects · {builder.completed_count || 0} shipped
+                                            </p>
+                                        </Link>
+                                    ))}
+                                </div>
+                            ) : (
+                                <p className="text-sm text-text-secondary">No builders matched this search yet.</p>
+                            )}
+                        </div>
+                    </div>
+                )}
 
                 {/* Content */}
                 {loading ? (
@@ -188,8 +272,8 @@ const Dashboard = () => {
                 ) : (
                     /* Feed View */
                     <div className="space-y-0 border-2 border-black" data-testid="feed-list">
-                        {feed.length > 0 ? (
-                            feed.map((item, index) => (
+                        {filteredFeed.length > 0 ? (
+                            filteredFeed.map((item, index) => (
                                 <div 
                                     key={`${item.type}-${item.id}`} 
                                     className="feed-item animate-fade-in"

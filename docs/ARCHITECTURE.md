@@ -1,146 +1,130 @@
 # Architecture Overview
 
-## 1. System Purpose
+## 1. Purpose
 
-MzansiBuilds is a community platform for sharing projects in public. Users can register, publish projects, post updates, comment, like, follow builders, and request collaboration while seeing activity in near real time.
+MzansiBuilds is a platform for developers to share what they’re building, track progress, and interact with others. It supports project updates, discussions, and collaboration, with some realtime features layered in.
 
-## 2. High-Level Topology
+---
 
-```text
-[ Browser / React SPA ]
-          |
-          |  REST (`/api/*`) + cookie auth
-          |  WebSocket (`/ws`)
-          v
-[ FastAPI application ]
-          |
-          |  Motor / MongoDB client
-          v
-[ MongoDB Atlas ]
-```
-
-Local development can replace MongoDB Atlas with a persisted mock database in `memory/mock_db.json`.
-
-## 3. Frontend Architecture
-
-The frontend lives in `frontend/src/` and is organized by responsibility.
-
-### Main pieces
-
-- `App.js` defines public and protected routes.
-- `contexts/AuthContext.js` manages session state through `GET /api/auth/me` and cookie-based login/logout flows.
-- `contexts/WebSocketContext.js` manages the `/ws` connection, reconnect logic, and last broadcast message.
-- `pages/` contains user-facing screens such as `Dashboard`, `ProjectDetail`, `CreateProject`, `EditProject`, `Profile`, and `CelebrationWall`.
-- `components/` contains reusable UI like `Navbar`, `ProjectCard`, `CommentSection`, and `UpdateFeed`.
-- `lib/api.js` normalizes `API_URL` and `WS_URL` from environment variables or the current browser host.
-
-### Frontend behavior
-
-- Axios is used for REST requests.
-- Authenticated requests send cookies using `withCredentials: true`.
-- The dashboard can switch between a feed view and a project grid.
-- The project detail screen pulls project info, updates, comments, and collaboration requests in parallel.
-- WebSocket broadcasts update the feed and detail views without a full refresh.
-
-## 4. Backend Architecture
-
-The backend entrypoint is `backend.server:app`, which imports the FastAPI app from `backend/app/main.py`.
+## 2. High-Level Flow
 
 ```text
-backend/app/
-├── core/
-│   ├── config.py      environment settings, CORS, cookie policy, Cloudinary config
-│   └── database.py    MongoDB/mock DB setup, indexes, admin seeding, persistence
-├── models/
-│   └── schemas.py     strict Pydantic request models
-├── routes/
-│   ├── auth.py
-│   ├── users.py
-│   ├── projects.py
-│   ├── collaborations.py
-│   ├── community.py
-│   └── system.py
-├── services/
-│   ├── auth.py        bcrypt hashing, JWT generation, current-user resolution
-│   ├── email.py       notification email facade and logging
-│   └── realtime.py    WebSocket presence and broadcast manager
-└── utils/
-    └── common.py      shared helpers such as timestamps and text cleanup
+React (frontend)
+      |
+      | REST (/api) + cookies
+      | WebSocket (/ws)
+      v
+FastAPI (backend)
+      |
+      v
+MongoDB
 ```
 
-### Backend responsibilities
+For local development, MongoDB can be replaced with a persisted mock database (`memory/mock_db.json`).
 
-- `main.py` initializes the database, seeds the local admin user, mounts routers under `/api`, and exposes the `/ws` WebSocket endpoint.
-- `config.py` centralizes environment-aware security decisions such as `SameSite`, secure cookies, and CORS rules.
-- `database.py` creates indexes and supports a persisted mock database for development and tests.
-- `schemas.py` uses `extra="forbid"` and field length constraints to tighten request validation.
-- `realtime.py` tracks active sockets, online users, and broadcast events like new projects, comments, likes, and presence changes.
+---
 
-## 5. Data Layer
+## 3. Frontend
 
-The application primarily works with these MongoDB collections:
+Located in `frontend/src/`.
 
-| Collection | Purpose |
-| --- | --- |
-| `users` | Accounts, bios, profile links, skills, online state |
-| `projects` | Project metadata, stage, owner, support needs |
-| `updates` | Project progress posts |
-| `comments` | Threaded discussion on projects |
-| `collaboration_requests` | Requests to join or help with a project |
-| `follows` | User-to-user following relationships |
-| `likes` | Reactions to projects, updates, or comments |
-| `login_attempts` | Basic login throttling and lockout tracking |
-| `email_logs` | Mock notification history |
+### Key parts
 
-## 6. Core Runtime Flows
+* `App.js` handles routing
+* `AuthContext` manages session state
+* `WebSocketContext` handles realtime connection
+* `pages/` contains main screens (dashboard, project, profile, etc.)
+* `components/` contains reusable UI elements
+* `lib/api.js` centralizes API and WebSocket URLs
 
-### Authentication flow
+### Behaviour
 
-1. A user registers or logs in through `/api/auth/register` or `/api/auth/login`.
-2. The backend issues an `access_token` and `refresh_token` as `httpOnly` cookies.
-3. The frontend checks session state with `/api/auth/me` on startup.
-4. Protected screens rely on `AuthContext` and redirect anonymous users to `/login`.
+* Axios handles API requests
+* Cookies are used for authentication
+* WebSocket messages update UI without reload
+* Feed and project views fetch data in parallel
 
-### Project interaction flow
+---
 
-1. A builder creates a project via `POST /api/projects`.
-2. Other users can view the project, comment, like content, or send collaboration requests.
-3. The owner can edit or delete the project and review incoming collaboration requests.
-4. Community activity is surfaced through `/api/feed` and `/api/celebration-wall`.
+## 4. Backend
 
-### Realtime flow
+Entry point: `backend.server:app`
 
-1. The browser opens a WebSocket connection to `/ws`.
-2. If an auth cookie is present, the socket is associated with the current user.
-3. Backend events call `manager.broadcast(...)` to fan out updates such as `new_project`, `new_update`, `new_comment`, `new_like`, `user_online`, and `user_offline`.
-4. The dashboard and detail pages update local state when new messages arrive.
+```text
+app/
+  core/        config and database setup
+  models/      request schemas
+  routes/      API endpoints
+  services/    business logic
+  utils/       shared helpers
+```
 
-## 7. Deployment Architecture
+### Responsibilities
 
-- **Frontend:** Vercel serves the React single-page application.
-- **Backend:** Render runs `uvicorn backend.server:app`.
-- **Database:** MongoDB Atlas is the expected production data store.
-- **Routing:** `frontend/vercel.json` rewrites `/api/*` and `/ws` traffic to the Render backend.
-- **Health checks:** Render uses `/api/health`.
+* `main.py` wires everything together and mounts routes
+* `config.py` handles environment config and security settings
+* `database.py` sets up MongoDB or mock DB
+* `schemas.py` validates incoming requests
+* `realtime.py` manages WebSocket connections and broadcasts
 
-## 8. Local Development and Testing
+---
 
-- `USE_MOCK_DB=true` allows the app to run without a live MongoDB instance.
-- Mock data can persist across restarts in `memory/mock_db.json`.
-- `tests/test_api_smoke.py` covers health, auth, login/logout, and basic project CRUD flows.
+## 5. Data Model
 
-## 9. Practical Strengths and Gaps
+Main collections:
 
-### Strengths
+* `users`
+* `projects`
+* `updates`
+* `comments`
+* `collaboration_requests`
+* `follows`
+* `likes`
 
-- Clear separation between UI, API routes, shared services, and data bootstrap logic
-- Reasonable local developer experience with mock persistence
-- Realtime presence and feed broadcasts already integrated
-- Validation and cookie security are centralized
+---
 
-### Gaps worth considering next
+## 6. Core Flows
 
-- Add role-based authorization rules beyond project ownership
-- Replace mock email logging with a real provider when moving to production scale
-- Add pagination for feed, comments, and project listing endpoints
-- Add richer observability and structured audit logging
+### Authentication
+
+* User logs in → receives JWT cookies
+* Frontend checks session with `/api/auth/me`
+* Protected routes rely on that session
+
+---
+
+### Project Flow
+
+* User creates a project
+* Others can view, comment, like, or request collaboration
+* Activity appears in the feed
+
+---
+
+### Realtime
+
+* Client connects to `/ws`
+* Server tracks active users
+* Events are broadcast to update UI (projects, comments, likes, presence)
+
+---
+
+## 7. Deployment
+
+* Frontend: Vercel
+* Backend: Render
+* Database: MongoDB Atlas
+
+---
+
+## 8. Local Development
+
+* `USE_MOCK_DB=true` allows running without MongoDB
+* Mock data persists in `memory/mock_db.json`
+* Tests cover basic API functionality
+
+---
+
+## 9. Notes
+
+The structure is intentionally split between routes, services, and core setup to keep responsibilities clear. The goal was to keep things simple but still close to how a real-world app is organized.
