@@ -74,7 +74,7 @@ async def create_project(project_data: ProjectCreate, request: Request):
     user = await get_current_user(request)
     sdlc_type = project_data.sdlc_type
     stage_flow = get_stage_flow(sdlc_type)
-    current_stage = project_data.current_stage
+    current_stage = project_data.current_stage or from_legacy_stage(project_data.stage, sdlc_type)
     if current_stage not in stage_flow:
         raise HTTPException(status_code=400, detail="current_stage is invalid for selected sdlc_type")
 

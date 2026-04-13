@@ -66,8 +66,8 @@ class ProjectCreate(StrictBaseModel):
     description: str = Field(min_length=10, max_length=5000)
     stage: ProjectStage = "idea"
     support_needed: Optional[str] = Field(default="", max_length=500)
-    sdlc_type: SdlcType
-    current_stage: SdlcStage
+    sdlc_type: SdlcType = "waterfall"
+    current_stage: Optional[SdlcStage] = None
 
 
 class ProjectUpdate(StrictBaseModel):
