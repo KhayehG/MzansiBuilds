@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -11,7 +12,8 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response
 
 from ..core.config import CLOUDINARY_CONFIGURED, JWT_ALGORITHM, get_cookie_settings, get_jwt_secret
 from ..core.database import db
-from ..models.schemas import UserCreate, UserLogin
+from ..models.schemas import ForgotPasswordRequest, ResetPasswordRequest, UserCreate, UserLogin
+from ..services.email import email_service
 from ..services.auth import (
     clear_auth_cookies,
     create_access_token,
@@ -128,6 +130,63 @@ async def get_me(request: Request):
         "following_count": user.get("following_count", 0),
         "created_at": user.get("created_at", ""),
     }
+
+
+@router.post("/forgot-password")
+async def forgot_password(body: ForgotPasswordRequest):
+    """Send a password-reset link to the given email address.
+    Always returns 200 to avoid leaking whether the email is registered.
+    """
+    email = body.email.lower().strip()
+    user = await db.users.find_one({"email": email})
+    if user:
+        token = secrets.token_urlsafe(32)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+        await db.password_reset_tokens.insert_one(
+            {
+                "user_id": str(user["_id"]),
+                "token": token,
+                "expires_at": expires_at.isoformat(),
+                "used": False,
+            }
+        )
+        frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+        reset_link = f"{frontend_url}/reset-password?token={token}"
+        html = (
+            f"<p>Hi {user.get('username', 'there')},</p>"
+            f"<p>Click the link below to reset your MzansiBuilds password. "
+            f"This link expires in 1 hour.</p>"
+            f"<p><a href='{reset_link}'>{reset_link}</a></p>"
+            f"<p>If you did not request this, you can safely ignore this email.</p>"
+        )
+        await email_service.send_email(email, "Reset your MzansiBuilds password", html, "password_reset")
+    return {"message": "If that email is registered, a reset link has been sent."}
+
+
+@router.post("/reset-password")
+async def reset_password(body: ResetPasswordRequest):
+    """Validate the token and update the user's password."""
+    now = datetime.now(timezone.utc)
+    record = await db.password_reset_tokens.find_one({"token": body.token, "used": False})
+    if not record:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+
+    expires_at = datetime.fromisoformat(record["expires_at"])
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if now > expires_at:
+        raise HTTPException(status_code=400, detail="Reset token has expired")
+
+    new_hash = hash_password(body.new_password)
+    await db.users.update_one(
+        {"_id": ObjectId(record["user_id"])},
+        {"$set": {"password_hash": new_hash}},
+    )
+    await db.password_reset_tokens.update_one(
+        {"_id": record["_id"]},
+        {"$set": {"used": True}},
+    )
+    return {"message": "Password updated successfully"}
 
 
 @router.post("/refresh")
