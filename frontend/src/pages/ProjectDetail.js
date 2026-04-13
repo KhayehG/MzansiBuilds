@@ -134,6 +134,14 @@ const ProjectDetail = () => {
                         ? prev
                         : [lastMessage.data, ...prev]
                 ));
+            } else if (lastMessage.type === 'update_edited') {
+                setUpdates(prev => prev.map(update => (
+                    update.id === lastMessage.data.id
+                        ? { ...update, content: lastMessage.data.content, updated_at: lastMessage.data.updated_at }
+                        : update
+                )));
+            } else if (lastMessage.type === 'update_deleted') {
+                setUpdates(prev => prev.filter(update => update.id !== lastMessage.data.id));
             } else if (lastMessage.type === 'new_comment') {
                 setComments(prev => mergeIncomingComment(prev, lastMessage.data));
             }
@@ -227,6 +235,24 @@ const ProjectDetail = () => {
         }
     };
 
+    const handleEditUpdate = async (updateId, content) => {
+        const response = await axios.put(
+            `${API_URL}/api/projects/${projectId}/updates/${updateId}`,
+            { content },
+            { withCredentials: true }
+        );
+        setUpdates(prev => prev.map(update => (
+            update.id === updateId
+                ? { ...update, content: response.data.content, updated_at: response.data.updated_at }
+                : update
+        )));
+    };
+
+    const handleDeleteUpdate = async (updateId) => {
+        await axios.delete(`${API_URL}/api/projects/${projectId}/updates/${updateId}`, { withCredentials: true });
+        setUpdates(prev => prev.filter(update => update.id !== updateId));
+    };
+
     const handleUpdateCollabStatus = async (collabId, status) => {
         try {
             await axios.put(
@@ -256,10 +282,7 @@ const ProjectDetail = () => {
 
     const isOwner = isAuthenticated && user?.id === project?.user_id;
     const collaborationStatus = project?.collaboration_status;
-    const hasRequestedCollab = Boolean(
-        project?.has_requested_collab
-        || collaborations.some(c => c.requester_id === user?.id && c.status === 'pending')
-    );
+    const hasRequestedCollab = Boolean(project?.has_requested_collab || collaborationStatus);
 
     const onCommentAdded = (newComment) => {
         setComments(prev => mergeIncomingComment(prev, newComment));
@@ -447,7 +470,7 @@ const ProjectDetail = () => {
                             </div>
                         </Link>
 
-                        {isAuthenticated && !isOwner && !hasRequestedCollab && collaborationStatus !== 'accepted' && (
+                        {isAuthenticated && !isOwner && !hasRequestedCollab && (
                             <button
                                 onClick={() => setShowCollabForm(!showCollabForm)}
                                 className="btn-primary-brutalist py-2 px-4 flex items-center gap-2"
@@ -620,7 +643,12 @@ const ProjectDetail = () => {
                                 </div>
                             </form>
                         )}
-                        <UpdateFeed updates={updates} />
+                        <UpdateFeed
+                            updates={updates}
+                            canManageUpdates={isOwner}
+                            onEditUpdate={handleEditUpdate}
+                            onDeleteUpdate={handleDeleteUpdate}
+                        />
                     </div>
                 )}
 

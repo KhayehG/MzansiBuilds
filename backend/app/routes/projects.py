@@ -259,12 +259,13 @@ async def get_project(project_id: str, request: Request):
     if current_user:
         is_liked = await db.likes.find_one({"user_id": current_user["_id"], "project_id": project_id}) is not None
         if current_user["_id"] != project["user_id"]:
-            collab_request = await db.collaboration_requests.find_one(
+            collab_request = await db.collaboration_requests.find(
                 {"project_id": project_id, "requester_id": current_user["_id"]}
-            )
+            ).sort("created_at", -1).to_list(1)
+            collab_request = collab_request[0] if collab_request else None
             if collab_request:
                 collaboration_status = collab_request.get("status")
-                has_requested_collab = collaboration_status == "pending"
+                has_requested_collab = True
 
     return {
         "id": str(project["_id"]),
@@ -742,11 +743,85 @@ async def create_update(project_id: str, update_data: UpdateCreate, request: Req
     return {
         "id": update_id,
         "project_id": project_id,
+        "user_id": user["_id"],
         "content": update_data.content,
         "username": user["username"],
         "like_count": 0,
         "created_at": update_doc["created_at"],
     }
+
+
+@router.put("/{project_id}/updates/{update_id}")
+async def edit_update(project_id: str, update_id: str, update_data: UpdateCreate, request: Request):
+    user = await get_current_user(request)
+    project = await db.projects.find_one({"_id": validate_object_id(project_id)})
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    update = await db.updates.find_one({"_id": validate_object_id(update_id), "project_id": project_id})
+    if not update:
+        raise HTTPException(status_code=404, detail="Update not found")
+    if update["user_id"] != user["_id"]:
+        raise HTTPException(status_code=403, detail="Only update author can edit updates")
+
+    content = update_data.content.strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="Update content cannot be empty")
+
+    await db.updates.update_one(
+        {"_id": update["_id"]},
+        {"$set": {"content": content, "updated_at": utc_now_iso()}},
+    )
+
+    await manager.broadcast(
+        {
+            "type": "update_edited",
+            "data": {
+                "id": str(update["_id"]),
+                "project_id": project_id,
+                "content": content,
+                "updated_at": utc_now_iso(),
+            },
+        }
+    )
+
+    return {
+        "id": str(update["_id"]),
+        "project_id": project_id,
+        "user_id": update["user_id"],
+        "content": content,
+        "created_at": update.get("created_at", ""),
+        "updated_at": utc_now_iso(),
+    }
+
+
+@router.delete("/{project_id}/updates/{update_id}")
+async def delete_update(project_id: str, update_id: str, request: Request):
+    user = await get_current_user(request)
+    project = await db.projects.find_one({"_id": validate_object_id(project_id)})
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    update = await db.updates.find_one({"_id": validate_object_id(update_id), "project_id": project_id})
+    if not update:
+        raise HTTPException(status_code=404, detail="Update not found")
+    if update["user_id"] != user["_id"]:
+        raise HTTPException(status_code=403, detail="Only update author can delete updates")
+
+    await db.updates.delete_one({"_id": update["_id"]})
+    await db.likes.delete_many({"update_id": update_id})
+
+    await manager.broadcast(
+        {
+            "type": "update_deleted",
+            "data": {
+                "id": update_id,
+                "project_id": project_id,
+            },
+        }
+    )
+
+    return {"message": "Update deleted successfully"}
 
 
 @router.get("/{project_id}/updates")
@@ -772,12 +847,14 @@ async def get_updates(project_id: str, request: Request):
             {
                 "id": str(update["_id"]),
                 "project_id": update["project_id"],
+                "user_id": update["user_id"],
                 "content": update["content"],
                 "username": update_user.get("username", "Unknown"),
                 "profile_picture_url": update_user.get("profile_picture_url"),
                 "like_count": update.get("like_count", 0),
                 "is_liked": str(update["_id"]) in liked_update_ids,
                 "created_at": update.get("created_at", ""),
+                "updated_at": update.get("updated_at", ""),
             }
         )
     return result
@@ -905,10 +982,11 @@ async def create_collaboration_request(project_id: str, collab_data: Collaborati
         raise HTTPException(status_code=400, detail="Cannot request collaboration on your own project")
 
     existing = await db.collaboration_requests.find_one(
-        {"project_id": project_id, "requester_id": user["_id"], "status": "pending"}
+        {"project_id": project_id, "requester_id": user["_id"]}
     )
     if existing:
-        raise HTTPException(status_code=400, detail="You already have a pending request for this project")
+        existing_status = existing.get("status", "pending")
+        raise HTTPException(status_code=400, detail=f"You have already raised a hand for this project ({existing_status})")
 
     collab_doc = {
         "project_id": project_id,
