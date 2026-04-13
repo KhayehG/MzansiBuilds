@@ -12,3 +12,4 @@ PyJWT==2.12.1
 python-multipart==0.0.22
 cloudinary==1.44.1
 requests==2.32.5
+resend==0.3.0
