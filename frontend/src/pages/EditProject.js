@@ -8,6 +8,36 @@ import { toast } from 'sonner';
 
 import { API_URL } from '../lib/api';
 
+const SDLC_STAGE_OPTIONS = {
+    waterfall: [
+        { value: 'planning', label: 'Planning', desc: 'Define goals and scope' },
+        { value: 'requirements', label: 'Requirements', desc: 'Capture detailed needs' },
+        { value: 'design', label: 'Design', desc: 'Architecture and technical design' },
+        { value: 'development', label: 'Development', desc: 'Build core functionality' },
+        { value: 'testing', label: 'Testing', desc: 'Validate quality and behavior' },
+        { value: 'deployment', label: 'Deployment', desc: 'Release to users' },
+        { value: 'maintenance', label: 'Maintenance', desc: 'Operate and improve' }
+    ],
+    agile: [
+        { value: 'backlog', label: 'Backlog', desc: 'Capture and refine work items' },
+        { value: 'sprint_planning', label: 'Sprint Planning', desc: 'Define sprint goals and tasks' },
+        { value: 'development', label: 'Development', desc: 'Implement sprint work' },
+        { value: 'testing', label: 'Testing', desc: 'Verify increment quality' },
+        { value: 'review', label: 'Review', desc: 'Review outcomes and iterate' }
+    ]
+};
+
+const legacyToCurrentStage = (legacyStage, sdlcType) => {
+    if (sdlcType === 'agile') {
+        if (legacyStage === 'completed') return 'review';
+        if (legacyStage === 'in_progress') return 'development';
+        return 'backlog';
+    }
+    if (legacyStage === 'completed') return 'maintenance';
+    if (legacyStage === 'in_progress') return 'development';
+    return 'planning';
+};
+
 const EditProject = () => {
     const { projectId } = useParams();
     const navigate = useNavigate();
@@ -15,7 +45,8 @@ const EditProject = () => {
     
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
-    const [stage, setStage] = useState('idea');
+    const [sdlcType, setSdlcType] = useState('waterfall');
+    const [currentStage, setCurrentStage] = useState('planning');
     const [supportNeeded, setSupportNeeded] = useState('');
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
@@ -34,7 +65,9 @@ const EditProject = () => {
                 
                 setTitle(project.title);
                 setDescription(project.description);
-                setStage(project.stage);
+                const nextSdlcType = project.sdlc_type || 'waterfall';
+                setSdlcType(nextSdlcType);
+                setCurrentStage(project.current_stage || legacyToCurrentStage(project.stage, nextSdlcType));
                 setSupportNeeded(project.support_needed || '');
             } catch (error) {
                 toast.error('Project not found');
@@ -58,7 +91,7 @@ const EditProject = () => {
         try {
             await axios.put(
                 `${API_URL}/api/projects/${projectId}`,
-                { title, description, stage, support_needed: supportNeeded },
+                { title, description, current_stage: currentStage, support_needed: supportNeeded },
                 { withCredentials: true }
             );
             toast.success('Project updated!');
@@ -135,27 +168,57 @@ const EditProject = () => {
                     <div className="card-brutalist p-6">
                         <label className="text-xs uppercase tracking-widest font-bold mb-3 flex items-center gap-2">
                             <Target className="w-4 h-4" />
-                            Current Stage
+                            SDLC Type
                         </label>
-                        <div className="grid grid-cols-3 gap-3">
+                        <div className="grid grid-cols-2 gap-3">
                             {[
-                                { value: 'idea', label: 'IDEA', desc: 'Just starting' },
-                                { value: 'in_progress', label: 'BUILDING', desc: 'Work in progress' },
-                                { value: 'completed', label: 'SHIPPED', desc: 'Ready to use' }
+                                { value: 'waterfall', label: 'WATERFALL', desc: 'Linear, controlled flow' },
+                                { value: 'agile', label: 'AGILE', desc: 'Iterative sprint cycles' }
                             ].map((option) => (
                                 <button
                                     key={option.value}
                                     type="button"
-                                    onClick={() => setStage(option.value)}
+                                    onClick={() => {
+                                        setSdlcType(option.value);
+                                        const defaultStage = SDLC_STAGE_OPTIONS[option.value][0]?.value;
+                                        if (defaultStage) setCurrentStage(defaultStage);
+                                    }}
                                     className={`p-4 border-2 border-black text-left transition-all ${
-                                        stage === option.value 
+                                        sdlcType === option.value
+                                            ? 'bg-primary text-white shadow-brutalist'
+                                            : 'bg-white hover:bg-gray-50'
+                                    }`}
+                                    data-testid={`edit-sdlc-${option.value}`}
+                                >
+                                    <span className="block font-bold text-sm">{option.label}</span>
+                                    <span className={`block text-xs mt-1 ${sdlcType === option.value ? 'text-white/80' : 'text-text-secondary'}`}>
+                                        {option.desc}
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="card-brutalist p-6">
+                        <label className="text-xs uppercase tracking-widest font-bold mb-3 flex items-center gap-2">
+                            <Target className="w-4 h-4" />
+                            Current SDLC Stage
+                        </label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {SDLC_STAGE_OPTIONS[sdlcType].map((option) => (
+                                <button
+                                    key={option.value}
+                                    type="button"
+                                    onClick={() => setCurrentStage(option.value)}
+                                    className={`p-4 border-2 border-black text-left transition-all ${
+                                        currentStage === option.value
                                             ? 'bg-primary text-white shadow-brutalist' 
                                             : 'bg-white hover:bg-gray-50'
                                     }`}
-                                    data-testid={`edit-stage-${option.value}`}
+                                    data-testid={`edit-current-stage-${option.value}`}
                                 >
-                                    <span className="block font-bold text-sm">{option.label}</span>
-                                    <span className={`block text-xs mt-1 ${stage === option.value ? 'text-white/80' : 'text-text-secondary'}`}>
+                                    <span className="block font-bold text-sm uppercase">{option.label}</span>
+                                    <span className={`block text-xs mt-1 ${currentStage === option.value ? 'text-white/80' : 'text-text-secondary'}`}>
                                         {option.desc}
                                     </span>
                                 </button>

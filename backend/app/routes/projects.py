@@ -293,11 +293,15 @@ async def update_project(project_id: str, project_data: ProjectUpdate, request: 
 
     update_data = {key: value for key, value in project_data.model_dump().items() if value is not None}
     if "current_stage" in update_data:
-        raise HTTPException(status_code=400, detail="Use stage transition endpoints to change current_stage")
+        sdlc_type = project.get("sdlc_type", "waterfall")
+        if update_data["current_stage"] not in get_stage_flow(sdlc_type):
+            raise HTTPException(status_code=400, detail="current_stage is invalid for selected sdlc_type")
+        update_data["stage"] = to_legacy_stage(update_data["current_stage"], sdlc_type)
 
     if "stage" in update_data:
         sdlc_type = project.get("sdlc_type", "waterfall")
-        update_data["current_stage"] = from_legacy_stage(update_data["stage"], sdlc_type)
+        if "current_stage" not in update_data:
+            update_data["current_stage"] = from_legacy_stage(update_data["stage"], sdlc_type)
     if update_data:
         update_data["updated_at"] = utc_now_iso()
         await db.projects.update_one({"_id": oid}, {"$set": update_data})
@@ -397,6 +401,10 @@ async def complete_current_stage(project_id: str, request: Request):
     next_stage = current_stage
     if current_index < len(stage_flow) - 1:
         next_stage = stage_flow[current_index + 1]
+        await db.stage_progress.update_many(
+            {"project_id": project_id, "stage_name": {"$ne": next_stage}, "status": "Active"},
+            {"$set": {"status": "Completed", "completed_at": now, "source": "System"}},
+        )
         await db.stage_progress.update_one(
             {"project_id": project_id, "stage_name": next_stage},
             {
@@ -466,6 +474,10 @@ async def move_stage(project_id: str, transition: StageTransitionCreate, request
         raise HTTPException(status_code=400, detail="Waterfall stages cannot be skipped forward")
 
     now = utc_now_iso()
+    await db.stage_progress.update_many(
+        {"project_id": project_id, "status": "Active"},
+        {"$set": {"status": "Completed", "completed_at": now, "source": "System"}},
+    )
     await db.stage_progress.update_one(
         {"project_id": project_id, "stage_name": current_stage},
         {"$set": {"status": "Completed", "completed_at": now, "source": "User"}},
@@ -592,6 +604,16 @@ async def update_milestone(project_id: str, milestone_id: str, data: MilestoneUp
     if project["user_id"] != user["_id"]:
         raise HTTPException(status_code=403, detail="Only project owner can edit milestones")
 
+    existing = await db.milestones.find_one({"_id": validate_object_id(milestone_id), "project_id": project_id})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Milestone not found")
+
+    current_stage_row = await db.stage_progress.find_one(
+        {"project_id": project_id, "stage_name": existing["stage_name"]}
+    )
+    if current_stage_row and current_stage_row.get("status") not in ("Active", "Reopened"):
+        raise HTTPException(status_code=400, detail="Milestones in completed/pending stages are read-only")
+
     update_data = {k: v for k, v in data.model_dump().items() if v is not None}
     if not update_data:
         raise HTTPException(status_code=400, detail="No updates provided")
@@ -601,13 +623,27 @@ async def update_milestone(project_id: str, milestone_id: str, data: MilestoneUp
         if update_data["stage_name"] not in get_stage_flow(sdlc_type):
             raise HTTPException(status_code=400, detail="stage_name is invalid for this SDLC type")
 
+        target_stage_row = await db.stage_progress.find_one(
+            {"project_id": project_id, "stage_name": update_data["stage_name"]}
+        )
+        if target_stage_row and target_stage_row.get("status") not in ("Active", "Reopened"):
+            raise HTTPException(status_code=400, detail="Milestones can only move to active/reopened stages")
+
+        if update_data["stage_name"] != existing["stage_name"]:
+            await db.stage_history.insert_one(
+                {
+                    "project_id": project_id,
+                    "from_stage": existing["stage_name"],
+                    "to_stage": update_data["stage_name"],
+                    "reason": f"Milestone moved: {existing.get('title', 'untitled')}",
+                    "changed_at": utc_now_iso(),
+                }
+            )
+
     result = await db.milestones.update_one(
         {"_id": validate_object_id(milestone_id), "project_id": project_id},
         {"$set": update_data},
     )
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Milestone not found")
-
     updated = await db.milestones.find_one({"_id": validate_object_id(milestone_id), "project_id": project_id})
     return {
         "id": str(updated["_id"]),
@@ -629,9 +665,16 @@ async def delete_milestone(project_id: str, milestone_id: str, request: Request)
     if project["user_id"] != user["_id"]:
         raise HTTPException(status_code=403, detail="Only project owner can delete milestones")
 
-    result = await db.milestones.delete_one({"_id": validate_object_id(milestone_id), "project_id": project_id})
-    if result.deleted_count == 0:
+    milestone = await db.milestones.find_one({"_id": validate_object_id(milestone_id), "project_id": project_id})
+    if not milestone:
         raise HTTPException(status_code=404, detail="Milestone not found")
+
+    stage_row = await db.stage_progress.find_one({"project_id": project_id, "stage_name": milestone["stage_name"]})
+    if stage_row and stage_row.get("status") not in ("Active", "Reopened"):
+        raise HTTPException(status_code=400, detail="Cannot delete milestones from completed/pending stages")
+
+    result = await db.milestones.delete_one({"_id": validate_object_id(milestone_id), "project_id": project_id})
+
     return {"message": "Milestone deleted successfully"}
 
 
