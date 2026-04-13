@@ -6,6 +6,7 @@ import { useWebSocket } from '../contexts/WebSocketContext';
 import Navbar from '../components/Navbar';
 import CommentSection from '../components/CommentSection';
 import UpdateFeed from '../components/UpdateFeed';
+import ProjectChat from '../components/ProjectChat';
 import ReportModal from '../components/ReportModal';
 import { 
     ArrowLeft, Clock, User, HandMetal, Rocket, Send, 
@@ -393,226 +394,15 @@ const ProjectDetail = () => {
     return (
         <div className="min-h-screen bg-background">
             <Navbar />
-            
             <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
                 {/* Back Button */}
                 <Link 
-                    to="/" 
+                    to="/"
                     className="inline-flex items-center gap-2 text-sm font-bold uppercase tracking-wider mb-6 hover:text-primary transition-colors"
                     data-testid="back-link"
                 >
                     <ArrowLeft className="w-4 h-4" /> Back to Feed
                 </Link>
-
-                {/* Project Header */}
-                <div className="card-brutalist p-8 mb-8" data-testid="project-header">
-                    <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
-                        <div>
-                            <div className="flex items-center gap-3 mb-3">
-                                {getCurrentStageBadge()}
-                                {project.sdlc_type && (
-                                    <span className="badge-idea">{String(project.sdlc_type).toUpperCase()}</span>
-                                )}
-                                <span className="text-sm text-text-secondary font-mono flex items-center gap-1">
-                                    <Clock className="w-4 h-4" />
-                                    {formatDate(project.created_at)}
-                                </span>
-                            </div>
-                            <h1 className="font-heading font-black text-3xl sm:text-4xl tracking-tighter" data-testid="project-title">
-                                {project.title}
-                            </h1>
-                        </div>
-
-                        {isOwner && (
-                            <div className="flex gap-2">
-                                <Link
-                                    to={`/project/${projectId}/edit`}
-                                    className="btn-secondary-brutalist py-2 px-4 flex items-center gap-2"
-                                    data-testid="edit-project"
-                                >
-                                    <Edit2 className="w-4 h-4" /> Edit
-                                </Link>
-                                <button
-                                    onClick={handleDeleteProject}
-                                    className="bg-error text-white border-2 border-black py-2 px-4 font-bold uppercase tracking-wider flex items-center gap-2 hover:bg-red-600 transition-colors"
-                                    data-testid="delete-project"
-                                >
-                                    <Trash2 className="w-4 h-4" /> Delete
-                                </button>
-                            </div>
-                        )}
-                    </div>
-
-                    <p className="text-text-secondary text-lg mb-6" data-testid="project-description">
-                        {project.description}
-                    </p>
-
-                    {project.support_needed && (
-                        <div className="bg-surface border-2 border-black p-4 mb-6">
-                            <p className="text-xs uppercase tracking-widest font-bold text-text-secondary mb-2">Looking for</p>
-                            <p className="font-medium">{project.support_needed}</p>
-                        </div>
-                    )}
-
-                    {/* Author & Actions */}
-                    <div className="flex flex-wrap items-center justify-between gap-4 pt-6 border-t-2 border-gray-200">
-                        <Link 
-                            to={`/profile/${project.user_id}`}
-                            className="flex items-center gap-3 hover:text-primary transition-colors"
-                            data-testid="project-author"
-                        >
-                            <div className="w-10 h-10 bg-black text-white flex items-center justify-center border-2 border-black">
-                                <span className="font-bold">{project.username?.[0]?.toUpperCase()}</span>
-                            </div>
-                            <div>
-                                <p className="font-bold">@{project.username}</p>
-                                {project.user_bio && (
-                                    <p className="text-sm text-text-secondary line-clamp-1">{project.user_bio}</p>
-                                )}
-                            </div>
-                        </Link>
-
-                        {isAuthenticated && !isOwner && (
-                            <div className="flex items-center gap-2">
-                                <button
-                                    type="button"
-                                    onClick={() => setReportModal({ open: true, type: 'project', itemId: projectId, userId: null, label: 'this project' })}
-                                    className="btn-secondary-brutalist py-2 px-3 flex items-center gap-2 text-xs"
-                                >
-                                    <Flag className="w-3 h-3" /> Report Project
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setReportModal({ open: true, type: 'user', itemId: null, userId: project.user_id, label: 'this user' })}
-                                    className="btn-secondary-brutalist py-2 px-3 flex items-center gap-2 text-xs"
-                                >
-                                    <Flag className="w-3 h-3" /> Report User
-                                </button>
-                            </div>
-                        )}
-
-                        {isAuthenticated && !isOwner && !hasRequestedCollab && (
-                            <button
-                                onClick={() => setShowCollabForm(!showCollabForm)}
-                                className="btn-primary-brutalist py-2 px-4 flex items-center gap-2"
-                                data-testid="raise-hand-btn"
-                            >
-                                <HandMetal className="w-4 h-4" /> Raise Hand
-                            </button>
-                        )}
-
-                        {hasRequestedCollab && (
-                            <span className="raise-hand-badge py-2">
-                                <CheckCircle className="w-4 h-4" /> Request Sent
-                            </span>
-                        )}
-
-                        {collaborationStatus === 'accepted' && (
-                            <span className="raise-hand-badge py-2">
-                                <CheckCircle className="w-4 h-4" /> Collaboration Accepted
-                            </span>
-                        )}
-
-                        {collaborationStatus === 'rejected' && (
-                            <span className="inline-flex items-center gap-2 border-2 border-black bg-white px-3 py-2 text-sm font-bold uppercase tracking-wider text-black">
-                                <AlertCircle className="w-4 h-4" /> Request Declined
-                            </span>
-                        )}
-                    </div>
-
-                    {/* Report Modal */}
-                    <ReportModal
-                        isOpen={reportModal.open}
-                        onClose={() => setReportModal({ open: false, type: null, itemId: null, userId: null, label: '' })}
-                        reportType={reportModal.type}
-                        reportedItemId={reportModal.itemId}
-                        reportedUserId={reportModal.userId}
-                        contextLabel={reportModal.label}
-                    />
-
-                    {/* Collaboration Form */}
-                    {showCollabForm && (
-                        <form onSubmit={handleRequestCollaboration} className="mt-6 p-4 bg-surface border-2 border-black" data-testid="collab-form">
-                            <label className="block text-xs uppercase tracking-widest font-bold mb-2">
-                                Message (optional)
-                            </label>
-                            <textarea
-                                value={collabMessage}
-                                onChange={(e) => setCollabMessage(e.target.value)}
-                                className="input-brutalist w-full mb-4"
-                                placeholder="Introduce yourself and how you'd like to help..."
-                                rows={3}
-                                data-testid="collab-message"
-                            />
-                            <div className="flex gap-2">
-                                <button
-                                    type="submit"
-                                    disabled={isRequestingCollab}
-                                    className="btn-primary-brutalist py-2 px-4"
-                                    data-testid="collab-submit"
-                                >
-                                    {isRequestingCollab ? 'Sending...' : 'Send Request'}
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setShowCollabForm(false)}
-                                    className="btn-secondary-brutalist py-2 px-4"
-                                >
-                                    Cancel
-                                </button>
-                            </div>
-                        </form>
-                    )}
-                </div>
-
-                {/* Collaboration Requests (Owner Only) */}
-                {isOwner && collaborations.length > 0 && (
-                    <div className="card-brutalist p-6 mb-8" data-testid="collab-requests">
-                        <h3 className="font-heading font-bold text-xl uppercase tracking-tight mb-4 flex items-center gap-2">
-                            <HandMetal className="w-5 h-5" />
-                            Collaboration Requests ({collaborations.filter(c => c.status === 'pending').length} pending)
-                        </h3>
-                        <div className="space-y-4">
-                            {collaborations.map((collab) => (
-                                <div 
-                                    key={collab.id} 
-                                    className={`p-4 border-2 border-black ${collab.status === 'pending' ? 'bg-white' : 'bg-surface'}`}
-                                    data-testid={`collab-${collab.id}`}
-                                >
-                                    <div className="flex items-start justify-between gap-4">
-                                        <div>
-                                            <p className="font-bold">@{collab.requester_username}</p>
-                                            {collab.message && (
-                                                <p className="text-text-secondary text-sm mt-1">{collab.message}</p>
-                                            )}
-                                            <p className="text-xs text-text-secondary font-mono mt-2">
-                                                {collab.status === 'pending' ? 'Pending' : collab.status.charAt(0).toUpperCase() + collab.status.slice(1)}
-                                            </p>
-                                        </div>
-                                        {collab.status === 'pending' && (
-                                            <div className="flex gap-2">
-                                                <button
-                                                    onClick={() => handleUpdateCollabStatus(collab.id, 'accepted')}
-                                                    className="bg-primary text-white border-2 border-black py-1 px-3 text-sm font-bold uppercase"
-                                                    data-testid={`accept-${collab.id}`}
-                                                >
-                                                    Accept
-                                                </button>
-                                                <button
-                                                    onClick={() => handleUpdateCollabStatus(collab.id, 'rejected')}
-                                                    className="bg-white text-black border-2 border-black py-1 px-3 text-sm font-bold uppercase hover:bg-gray-100"
-                                                    data-testid={`reject-${collab.id}`}
-                                                >
-                                                    Decline
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
 
                 {/* Tabs */}
                 <div className="flex border-2 border-black mb-6">
@@ -642,6 +432,15 @@ const ProjectDetail = () => {
                         data-testid="tab-sdlc"
                     >
                         SDLC Timeline
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('chat')}
+                        className={`flex-1 py-3 text-sm font-bold uppercase tracking-wider transition-colors ${
+                            activeTab === 'chat' ? 'bg-black text-white' : 'bg-white hover:bg-gray-50'
+                        }`}
+                        data-testid="tab-chat"
+                    >
+                        Project Chat
                     </button>
                 </div>
 
@@ -689,6 +488,14 @@ const ProjectDetail = () => {
                         projectId={projectId} 
                         comments={comments}
                         onCommentAdded={onCommentAdded}
+                    />
+                )}
+
+                {/* Chat Tab */}
+                {activeTab === 'chat' && (
+                    <ProjectChat
+                        projectId={projectId}
+                        canChat={isOwner || collaborationStatus === 'accepted'}
                     />
                 )}
 

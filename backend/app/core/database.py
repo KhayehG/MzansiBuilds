@@ -9,7 +9,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from .config import DB_NAME, IS_PRODUCTION, USE_MOCK_DB, logger
 from ..utils.common import utc_now_iso
 
-mongo_url = os.environ.get("MONGO_URL")
+mongo_url = os.environ.get("MONGODB_URI") or os.environ.get("MONGO_URL")
 PERSIST_MOCK_DB = os.environ.get("PERSIST_MOCK_DB", "true" if USE_MOCK_DB else "false").lower() == "true"
 MOCK_DB_FILE = Path(
     os.environ.get(
@@ -31,6 +31,9 @@ PERSISTED_COLLECTIONS = (
     "stage_progress",
     "milestones",
     "stage_history",
+    "conversations",
+    "messages",
+    "notifications",
 )
 
 if IS_PRODUCTION and USE_MOCK_DB:

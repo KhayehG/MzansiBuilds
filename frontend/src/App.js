@@ -15,6 +15,7 @@ import CelebrationWall from "./pages/CelebrationWall";
 import Profile from "./pages/Profile";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
+import Messages from "./pages/Messages";
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -80,6 +81,11 @@ function App() {
               <Route path="/profile" element={
                 <ProtectedRoute>
                   <Profile />
+                </ProtectedRoute>
+              } />
+              <Route path="/messages" element={
+                <ProtectedRoute>
+                  <Messages />
                 </ProtectedRoute>
               } />
               
