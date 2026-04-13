@@ -27,6 +27,7 @@ PERSISTED_COLLECTIONS = (
     "follows",
     "likes",
     "email_logs",
+    "reports",
 )
 
 if IS_PRODUCTION and USE_MOCK_DB:
@@ -90,6 +91,7 @@ async def initialize_database() -> None:
     await db.comments.create_index("project_id")
     await db.comments.create_index("parent_id")
     await db.collaboration_requests.create_index("project_id")
+    await db.collaboration_requests.create_index("requester_id")
     await db.follows.create_index("follower_id")
     await db.follows.create_index("following_id")
     await db.follows.create_index([("follower_id", 1), ("following_id", 1)], unique=True)
@@ -98,6 +100,9 @@ async def initialize_database() -> None:
     await db.likes.create_index("update_id")
     await db.likes.create_index("comment_id")
     await db.email_logs.create_index("sent_at")
+    await db.reports.create_index("reported_by_user_id")
+    await db.reports.create_index("status")
+    await db.reports.create_index("created_at")
 
 
 async def seed_admin_user() -> None:
