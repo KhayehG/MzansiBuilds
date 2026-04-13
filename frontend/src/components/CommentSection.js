@@ -10,7 +10,7 @@ const CommentSection = ({ projectId, comments: initialComments, onCommentAdded }
     const { isAuthenticated, user } = useAuth();
     const [content, setContent] = useState('');
     const [replyingTo, setReplyingTo] = useState(null);
-    const [replyContent, setReplyContent] = useState('');
+    const [replyDrafts, setReplyDrafts] = useState({});
     const [isSubmitting, setIsSubmitting] = useState(false);
     const comments = initialComments || [];
 
@@ -47,13 +47,14 @@ const CommentSection = ({ projectId, comments: initialComments, onCommentAdded }
     };
 
     const handleReply = async (parentId) => {
-        if (!replyContent.trim()) return;
+        const replyContent = (replyDrafts[parentId] || '').trim();
+        if (!replyContent) return;
 
         setIsSubmitting(true);
         try {
             const response = await axios.post(
                 `${API_URL}/api/projects/${projectId}/comments`,
-                { content: replyContent.trim(), parent_id: parentId },
+                { content: replyContent, parent_id: parentId },
                 { withCredentials: true }
             );
             
@@ -61,7 +62,7 @@ const CommentSection = ({ projectId, comments: initialComments, onCommentAdded }
                 onCommentAdded(response.data);
             }
             
-            setReplyContent('');
+            setReplyDrafts(prev => ({ ...prev, [parentId]: '' }));
             setReplyingTo(null);
             toast.success('Reply added!');
         } catch (error) {
@@ -149,6 +150,7 @@ const CommentSection = ({ projectId, comments: initialComments, onCommentAdded }
                     
                     {!isReply && isAuthenticated && (
                         <button
+                            type="button"
                             onClick={() => setReplyingTo(replyingTo === comment.id ? null : comment.id)}
                             className="flex items-center gap-1 text-xs text-text-secondary hover:text-primary"
                         >
@@ -163,15 +165,17 @@ const CommentSection = ({ projectId, comments: initialComments, onCommentAdded }
                     <div className="mt-3 flex gap-2">
                         <input
                             type="text"
-                            value={replyContent}
-                            onChange={(e) => setReplyContent(e.target.value)}
+                            value={replyDrafts[comment.id] || ''}
+                            onChange={(e) => setReplyDrafts(prev => ({ ...prev, [comment.id]: e.target.value }))}
                             placeholder="Write a reply..."
                             className="input-brutalist flex-1 py-2 text-sm"
                             data-testid={`reply-input-${comment.id}`}
+                            autoFocus
                         />
                         <button
+                            type="button"
                             onClick={() => handleReply(comment.id)}
-                            disabled={isSubmitting || !replyContent.trim()}
+                            disabled={isSubmitting || !(replyDrafts[comment.id] || '').trim()}
                             className="btn-primary-brutalist py-2 px-3 text-xs disabled:opacity-50"
                             data-testid={`reply-submit-${comment.id}`}
                         >

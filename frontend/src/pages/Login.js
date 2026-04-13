@@ -117,12 +117,19 @@ const Login = () => {
                         </button>
                     </form>
 
-                    <p className="mt-8 text-center text-text-secondary">
-                        New here?{' '}
-                        <Link to="/register" className="text-primary font-bold hover:underline" data-testid="login-register-link">
-                            Create an account
-                        </Link>
-                    </p>
+                    <div className="mt-8 text-center space-y-3">
+                        <p className="text-text-secondary">
+                            <Link to="/forgot-password" className="text-primary font-bold hover:underline">
+                                Forgot your password?
+                            </Link>
+                        </p>
+                        <p className="text-text-secondary">
+                            New here?{' '}
+                            <Link to="/register" className="text-primary font-bold hover:underline" data-testid="login-register-link">
+                                Create an account
+                            </Link>
+                        </p>
+                    </div>
                 </div>
             </div>
 

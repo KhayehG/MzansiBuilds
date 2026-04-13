@@ -13,6 +13,8 @@ import ProjectDetail from "./pages/ProjectDetail";
 import EditProject from "./pages/EditProject";
 import CelebrationWall from "./pages/CelebrationWall";
 import Profile from "./pages/Profile";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -57,6 +59,8 @@ function App() {
               {/* Public Routes */}
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/" element={<Dashboard />} />
               <Route path="/celebration" element={<CelebrationWall />} />
               <Route path="/project/:projectId" element={<ProjectDetail />} />

@@ -52,6 +52,15 @@ class UserLogin(StrictBaseModel):
     password: str = Field(min_length=8, max_length=128)
 
 
+class ForgotPasswordRequest(StrictBaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(StrictBaseModel):
+    token: str
+    new_password: str = Field(min_length=8, max_length=128)
+
+
 class UserProfileUpdate(StrictBaseModel):
     username: Optional[str] = Field(default=None, min_length=3, max_length=30)
     bio: Optional[str] = Field(default=None, max_length=280)
