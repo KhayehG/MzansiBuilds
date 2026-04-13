@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 from bson import ObjectId
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from ..core.database import db
 from ..models.schemas import (
@@ -71,6 +71,8 @@ async def get_projects(
     stage: str | None = None,
     user_id: str | None = None,
     q: str | None = None,
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     request: Request = None,
 ):
     query: dict = {}
@@ -78,6 +80,8 @@ async def get_projects(
         query["stage"] = stage
     if user_id:
         query["user_id"] = user_id
+    query["hidden"] = {"$ne": True}  # Exclude hidden projects
+    
     if q and q.strip():
         pattern = {"$regex": re.escape(q.strip()), "$options": "i"}
         matching_users = await db.users.find({"username": pattern}, {"_id": 1}).to_list(100)
@@ -90,7 +94,8 @@ async def get_projects(
             search_filters.append({"user_id": {"$in": [str(user["_id"]) for user in matching_users]}})
         query["$or"] = search_filters
 
-    projects = await db.projects.find(query).sort("created_at", -1).to_list(100)
+    total = await db.projects.count_documents(query)
+    projects = await db.projects.find(query).sort("created_at", -1).skip(offset).limit(limit).to_list(limit)
     user_ids = list({project["user_id"] for project in projects})
     users = await db.users.find(
         {"_id": {"$in": [ObjectId(user_id_value) for user_id_value in user_ids]}},
@@ -123,7 +128,12 @@ async def get_projects(
                 "created_at": project.get("created_at", ""),
             }
         )
-    return result
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "projects": result,
+    }
 
 
 @router.get("/{project_id}")

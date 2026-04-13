@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 from bson import ObjectId
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from ..core.database import db
 from ..models.schemas import UserProfileUpdate
@@ -16,8 +16,12 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 
 @router.get("")
-async def list_users(q: str | None = None, skip: int = 0, limit: int = 20, request: Request = None):
-    limit = max(1, min(limit, 50))
+async def list_users(
+    q: str | None = None,
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    request: Request = None,
+):
     query: dict = {}
 
     if q and q.strip():
@@ -28,9 +32,15 @@ async def list_users(q: str | None = None, skip: int = 0, limit: int = 20, reque
             {"skills": pattern},
         ]
 
-    users = await db.users.find(query, {"password_hash": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    total = await db.users.count_documents(query)
+    users = await db.users.find(query, {"password_hash": 0}).sort("created_at", -1).skip(offset).limit(limit).to_list(limit)
     if not users:
-        return []
+        return {
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "users": [],
+        }
 
     user_ids = [str(user["_id"]) for user in users]
     projects = await db.projects.find({"user_id": {"$in": user_ids}}, {"user_id": 1, "stage": 1}).to_list(1000)
@@ -51,22 +61,27 @@ async def list_users(q: str | None = None, skip: int = 0, limit: int = 20, reque
         ).to_list(limit)
         following_ids = {follow["following_id"] for follow in follows}
 
-    return [
-        {
-            "id": str(user["_id"]),
-            "username": user["username"],
-            "bio": user.get("bio", ""),
-            "profile_picture_url": user.get("profile_picture_url"),
-            "skills": user.get("skills", []),
-            "follower_count": user.get("follower_count", 0),
-            "following_count": user.get("following_count", 0),
-            "project_count": project_counts.get(str(user["_id"]), 0),
-            "completed_count": completed_counts.get(str(user["_id"]), 0),
-            "is_following": bool(current_user and current_user["_id"] != str(user["_id"]) and str(user["_id"]) in following_ids),
-            "created_at": user.get("created_at", ""),
-        }
-        for user in users
-    ]
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "users": [
+            {
+                "id": str(user["_id"]),
+                "username": user["username"],
+                "bio": user.get("bio", ""),
+                "profile_picture_url": user.get("profile_picture_url"),
+                "skills": user.get("skills", []),
+                "follower_count": user.get("follower_count", 0),
+                "following_count": user.get("following_count", 0),
+                "project_count": project_counts.get(str(user["_id"]), 0),
+                "completed_count": completed_counts.get(str(user["_id"]), 0),
+                "is_following": bool(current_user and current_user["_id"] != str(user["_id"]) and str(user["_id"]) in following_ids),
+                "created_at": user.get("created_at", ""),
+            }
+            for user in users
+        ],
+    }
 
 
 @router.get("/{user_id}")
