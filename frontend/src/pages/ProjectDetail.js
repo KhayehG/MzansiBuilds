@@ -6,9 +6,10 @@ import { useWebSocket } from '../contexts/WebSocketContext';
 import Navbar from '../components/Navbar';
 import CommentSection from '../components/CommentSection';
 import UpdateFeed from '../components/UpdateFeed';
+import ReportModal from '../components/ReportModal';
 import { 
     ArrowLeft, Clock, User, HandMetal, Rocket, Send, 
-    Edit2, Trash2, CheckCircle, AlertCircle, ChevronDown, ChevronRight
+    Edit2, Trash2, CheckCircle, AlertCircle, ChevronDown, ChevronRight, Flag
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -38,6 +39,7 @@ const ProjectDetail = () => {
     const [isSubmittingMilestone, setIsSubmittingMilestone] = useState(false);
     const [isCompletingStage, setIsCompletingStage] = useState(false);
     const [isReopeningStage, setIsReopeningStage] = useState(false);
+    const [reportModal, setReportModal] = useState({ open: false, type: null, itemId: null, userId: null, label: '' });
 
     const fetchData = useCallback(async () => {
         try {
@@ -470,6 +472,25 @@ const ProjectDetail = () => {
                             </div>
                         </Link>
 
+                        {isAuthenticated && !isOwner && (
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setReportModal({ open: true, type: 'project', itemId: projectId, userId: null, label: 'this project' })}
+                                    className="btn-secondary-brutalist py-2 px-3 flex items-center gap-2 text-xs"
+                                >
+                                    <Flag className="w-3 h-3" /> Report Project
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setReportModal({ open: true, type: 'user', itemId: null, userId: project.user_id, label: 'this user' })}
+                                    className="btn-secondary-brutalist py-2 px-3 flex items-center gap-2 text-xs"
+                                >
+                                    <Flag className="w-3 h-3" /> Report User
+                                </button>
+                            </div>
+                        )}
+
                         {isAuthenticated && !isOwner && !hasRequestedCollab && (
                             <button
                                 onClick={() => setShowCollabForm(!showCollabForm)}
@@ -498,6 +519,16 @@ const ProjectDetail = () => {
                             </span>
                         )}
                     </div>
+
+                    {/* Report Modal */}
+                    <ReportModal
+                        isOpen={reportModal.open}
+                        onClose={() => setReportModal({ open: false, type: null, itemId: null, userId: null, label: '' })}
+                        reportType={reportModal.type}
+                        reportedItemId={reportModal.itemId}
+                        reportedUserId={reportModal.userId}
+                        contextLabel={reportModal.label}
+                    />
 
                     {/* Collaboration Form */}
                     {showCollabForm && (
