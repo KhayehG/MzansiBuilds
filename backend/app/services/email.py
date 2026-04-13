@@ -4,9 +4,10 @@ import os
 from bson import ObjectId
 
 try:
-    from resend import Resend
+    import resend as resend_module
     RESEND_AVAILABLE = True
 except ImportError:
+    resend_module = None
     RESEND_AVAILABLE = False
 
 from ..core.database import db
@@ -17,27 +18,28 @@ from ..utils.common import utc_now_iso
 class EmailService:
     """Email notification service using Resend for production, mock for development."""
 
-    _resend_client = None
+    _configured = False
 
     @classmethod
-    def _get_resend_client(cls):
-        """Lazy-load Resend client."""
-        if cls._resend_client is None and RESEND_AVAILABLE:
+    def _configure_resend(cls):
+        """Lazy-configure Resend with API key."""
+        if not cls._configured and RESEND_AVAILABLE:
             api_key = os.environ.get("RESEND_API_KEY")
             if api_key:
-                cls._resend_client = Resend(api_key)
-                logger.info("Resend email client initialized")
-        return cls._resend_client
+                resend_module.api_key = api_key
+                cls._configured = True
+                logger.info("Resend email client configured")
+        return cls._configured
 
     @staticmethod
     async def send_email(to: str, subject: str, html: str, email_type: str = "general") -> bool:
-        resend = EmailService._get_resend_client()
+        configured = EmailService._configure_resend()
         from_email = os.environ.get("RESEND_FROM_EMAIL", "noreply@mzansibuilds.com")
 
         # Try real Resend first
-        if resend:
+        if configured:
             try:
-                result = resend.emails.send(
+                result = resend_module.Emails.send(
                     {
                         "from": from_email,
                         "to": to,
@@ -46,7 +48,7 @@ class EmailService:
                     }
                 )
                 status = "sent"
-                logger.info("Email sent via Resend to %s (ID: %s)", to, result.get("id"))
+                logger.info("Email sent via Resend to %s (ID: %s)", to, getattr(result, 'id', None))
             except Exception as e:
                 logger.error("Resend email failed for %s: %s", to, str(e))
                 status = "failed"
