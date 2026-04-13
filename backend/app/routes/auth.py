@@ -170,7 +170,8 @@ async def generate_cloudinary_signature(
         raise HTTPException(status_code=400, detail="Invalid folder path")
 
     timestamp = int(time.time())
-    params = {"timestamp": timestamp, "folder": folder, "resource_type": resource_type}
+    # Sign only the parameters sent in the upload form payload.
+    params = {"timestamp": timestamp, "folder": folder}
     signature = cloudinary.utils.api_sign_request(params, os.environ.get("CLOUDINARY_API_SECRET"))
 
     return {
