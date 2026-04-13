@@ -8,7 +8,7 @@ import CommentSection from '../components/CommentSection';
 import UpdateFeed from '../components/UpdateFeed';
 import { 
     ArrowLeft, Clock, User, HandMetal, Rocket, Send, 
-    Edit2, Trash2, CheckCircle, AlertCircle 
+    Edit2, Trash2, CheckCircle, AlertCircle, ChevronDown, ChevronRight
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -33,6 +33,11 @@ const ProjectDetail = () => {
     const [collabMessage, setCollabMessage] = useState('');
     const [showCollabForm, setShowCollabForm] = useState(false);
     const [activeTab, setActiveTab] = useState('sdlc');
+    const [expandedStages, setExpandedStages] = useState({});
+    const [milestoneFormByStage, setMilestoneFormByStage] = useState({});
+    const [isSubmittingMilestone, setIsSubmittingMilestone] = useState(false);
+    const [isCompletingStage, setIsCompletingStage] = useState(false);
+    const [isReopeningStage, setIsReopeningStage] = useState(false);
 
     const fetchData = useCallback(async () => {
         try {
@@ -73,6 +78,21 @@ const ProjectDetail = () => {
     useEffect(() => {
         fetchData();
     }, [fetchData]);
+
+    useEffect(() => {
+        const nextExpanded = {};
+        stageProgress.forEach((stage) => {
+            if (expandedStages[stage.stage_name] === undefined) {
+                nextExpanded[stage.stage_name] = stage.status === 'Active' || stage.status === 'Reopened';
+            } else {
+                nextExpanded[stage.stage_name] = expandedStages[stage.stage_name];
+            }
+        });
+        if (Object.keys(nextExpanded).length > 0) {
+            setExpandedStages(nextExpanded);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [stageProgress]);
 
     // Handle real-time updates
     const mergeIncomingComment = useCallback((existingComments, incomingComment) => {
@@ -243,6 +263,82 @@ const ProjectDetail = () => {
 
     const onCommentAdded = (newComment) => {
         setComments(prev => mergeIncomingComment(prev, newComment));
+    };
+
+    const toggleStage = (stageName) => {
+        setExpandedStages(prev => ({ ...prev, [stageName]: !prev[stageName] }));
+    };
+
+    const handleMilestoneFieldChange = (stageName, field, value) => {
+        setMilestoneFormByStage(prev => ({
+            ...prev,
+            [stageName]: {
+                title: prev[stageName]?.title || '',
+                description: prev[stageName]?.description || '',
+                ...prev[stageName],
+                [field]: value,
+            },
+        }));
+    };
+
+    const handleAddMilestone = async (stageName) => {
+        const payload = milestoneFormByStage[stageName] || {};
+        if (!payload.title?.trim() || !payload.description?.trim()) {
+            toast.error('Please provide milestone title and description');
+            return;
+        }
+        setIsSubmittingMilestone(true);
+        try {
+            await axios.post(
+                `${API_URL}/api/projects/${projectId}/milestones`,
+                {
+                    stage_name: stageName,
+                    title: payload.title.trim(),
+                    description: payload.description.trim(),
+                },
+                { withCredentials: true }
+            );
+            setMilestoneFormByStage(prev => ({ ...prev, [stageName]: { title: '', description: '' } }));
+            await fetchData();
+            toast.success('Milestone added');
+        } catch (error) {
+            toast.error(error.response?.data?.detail || 'Failed to add milestone');
+        } finally {
+            setIsSubmittingMilestone(false);
+        }
+    };
+
+    const handleCompleteStage = async () => {
+        setIsCompletingStage(true);
+        try {
+            await axios.post(`${API_URL}/api/projects/${projectId}/stages/complete`, {}, { withCredentials: true });
+            await fetchData();
+            toast.success('Stage completed');
+        } catch (error) {
+            toast.error(error.response?.data?.detail || 'Failed to complete stage');
+        } finally {
+            setIsCompletingStage(false);
+        }
+    };
+
+    const handleReopenStage = async (stageName) => {
+        const reason = window.prompt(`Reason for reopening ${formatStageLabel(stageName)}:`)?.trim();
+        if (!reason) return;
+
+        setIsReopeningStage(true);
+        try {
+            await axios.post(
+                `${API_URL}/api/projects/${projectId}/stages/move`,
+                { to_stage: stageName, reason },
+                { withCredentials: true }
+            );
+            await fetchData();
+            toast.success('Stage reopened');
+        } catch (error) {
+            toast.error(error.response?.data?.detail || 'Failed to reopen stage');
+        } finally {
+            setIsReopeningStage(false);
+        }
     };
 
     const milestonesByStage = milestones.reduce((acc, milestone) => {
@@ -549,20 +645,38 @@ const ProjectDetail = () => {
                             <div className="space-y-6">
                                 {stageProgress.map((stage) => {
                                     const stageMilestones = milestonesByStage[stage.stage_name] || [];
+                                    const isExpanded = expandedStages[stage.stage_name];
+                                    const isEditable = stage.status === 'Active' || stage.status === 'Reopened';
                                     return (
                                         <div key={stage.stage_name} className="sdlc-stage-block">
                                             <div className="flex items-center justify-between gap-3 mb-3">
-                                                <h4 className="font-bold uppercase tracking-wider text-sm">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => toggleStage(stage.stage_name)}
+                                                    className="flex items-center gap-2 font-bold uppercase tracking-wider text-sm"
+                                                >
+                                                    {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                                                     {formatStageLabel(stage.stage_name)}
-                                                </h4>
+                                                </button>
                                                 <div className="flex items-center gap-2">
                                                     {stage.source === 'External' && (
                                                         <span className="badge-idea">EXTERNAL</span>
                                                     )}
                                                     {getStageStatusBadge(stage.status)}
+                                                    {isOwner && stage.status === 'Completed' && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleReopenStage(stage.stage_name)}
+                                                            className="btn-secondary-brutalist py-1 px-2 text-[10px]"
+                                                            disabled={isReopeningStage}
+                                                        >
+                                                            REOPEN
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </div>
 
+                                            {isExpanded && (
                                             <div className="timeline-vertical">
                                                 {stageMilestones.length === 0 ? (
                                                     <div className="timeline-item muted">
@@ -592,10 +706,56 @@ const ProjectDetail = () => {
                                                         </div>
                                                     ))
                                                 )}
+
+                                                {isOwner && isEditable && (
+                                                    <div className="timeline-item">
+                                                        <div className="timeline-node" />
+                                                        <div className="timeline-content space-y-2">
+                                                            <p className="font-semibold text-sm">Add Milestone</p>
+                                                            <input
+                                                                type="text"
+                                                                className="input-brutalist w-full py-2 text-sm"
+                                                                placeholder="Milestone title"
+                                                                value={milestoneFormByStage[stage.stage_name]?.title || ''}
+                                                                onChange={(e) => handleMilestoneFieldChange(stage.stage_name, 'title', e.target.value)}
+                                                            />
+                                                            <textarea
+                                                                className="input-brutalist w-full py-2 text-sm min-h-[90px]"
+                                                                placeholder="Milestone description"
+                                                                value={milestoneFormByStage[stage.stage_name]?.description || ''}
+                                                                onChange={(e) => handleMilestoneFieldChange(stage.stage_name, 'description', e.target.value)}
+                                                            />
+                                                            <div className="flex gap-2 justify-end">
+                                                                <button
+                                                                    type="button"
+                                                                    className="btn-primary-brutalist py-2 px-3 text-xs"
+                                                                    disabled={isSubmittingMilestone}
+                                                                    onClick={() => handleAddMilestone(stage.stage_name)}
+                                                                >
+                                                                    {isSubmittingMilestone ? 'ADDING...' : 'ADD MILESTONE'}
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
+                                            )}
                                         </div>
                                     );
                                 })}
+                            </div>
+                        )}
+
+                        {isOwner && (
+                            <div className="mt-6 flex justify-end">
+                                <button
+                                    type="button"
+                                    onClick={handleCompleteStage}
+                                    className="btn-primary-brutalist py-2 px-4 text-xs"
+                                    disabled={isCompletingStage}
+                                >
+                                    {isCompletingStage ? 'COMPLETING...' : 'MARK CURRENT STAGE COMPLETE'}
+                                </button>
                             </div>
                         )}
                     </div>
