@@ -3,12 +3,14 @@ import axios from 'axios';
 import { API_URL } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { Bell } from 'lucide-react';
+import { useWebSocket } from '../contexts/WebSocketContext';
 
 const NotificationCenter = () => {
   const { isAuthenticated } = useAuth();
   const [notifications, setNotifications] = useState([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const { lastMessage } = useWebSocket();
 
   const fetchNotifications = async () => {
     setLoading(true);
@@ -25,6 +27,12 @@ const NotificationCenter = () => {
   useEffect(() => {
     if (isAuthenticated) fetchNotifications();
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!lastMessage || lastMessage.type !== 'notification') return;
+    const n = lastMessage.data;
+    setNotifications(prev => [n, ...prev]);
+  }, [lastMessage]);
 
   const markRead = async (id) => {
     try {

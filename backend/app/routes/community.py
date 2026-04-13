@@ -70,6 +70,19 @@ async def add_like(like_data: LikeCreate, request: Request):
             "new_like",
             {"liker_name": user["username"], "content_type": target_type},
         )
+        notification_doc = {
+            "user_id": target_doc["user_id"],
+            "type": "new_like",
+            "message": f"@{user['username']} liked your {target_type}",
+            "actor_id": user["_id"],
+            "is_read": False,
+            "created_at": utc_now_iso(),
+        }
+        result_notif = await db.notifications.insert_one(notification_doc)
+        await manager.send_to_user(target_doc["user_id"], {
+            "type": "notification",
+            "data": {**notification_doc, "id": str(result_notif.inserted_id)},
+        })
 
     await manager.broadcast(
         {

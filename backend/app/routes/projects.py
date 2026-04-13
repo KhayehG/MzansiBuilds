@@ -899,6 +899,36 @@ async def create_comment(project_id: str, comment_data: CommentCreate, request: 
             "new_comment",
             {"commenter_name": user["username"], "project_title": project["title"]},
         )
+        notification_doc = {
+            "user_id": project["user_id"],
+            "type": "new_comment",
+            "message": f"@{user['username']} commented on your project \"{project['title']}\"",
+            "actor_id": user["_id"],
+            "is_read": False,
+            "created_at": utc_now_iso(),
+        }
+        result_notif = await db.notifications.insert_one(notification_doc)
+        await manager.send_to_user(project["user_id"], {
+            "type": "notification",
+            "data": {**notification_doc, "id": str(result_notif.inserted_id)},
+        })
+
+    if parent_oid:
+        parent_author_id = parent_comment["user_id"]
+        if parent_author_id != user["_id"] and parent_author_id != project["user_id"]:
+            reply_notif = {
+                "user_id": parent_author_id,
+                "type": "comment_reply",
+                "message": f"@{user['username']} replied to your comment",
+                "actor_id": user["_id"],
+                "is_read": False,
+                "created_at": utc_now_iso(),
+            }
+            result_reply = await db.notifications.insert_one(reply_notif)
+            await manager.send_to_user(parent_author_id, {
+                "type": "notification",
+                "data": {**reply_notif, "id": str(result_reply.inserted_id)},
+            })
 
     await manager.broadcast(
         {
@@ -1003,6 +1033,19 @@ async def create_collaboration_request(project_id: str, collab_data: Collaborati
         "collaboration_request",
         {"requester_name": user["username"], "project_title": project["title"]},
     )
+    collab_notif = {
+        "user_id": project["user_id"],
+        "type": "collaboration_request",
+        "message": f"@{user['username']} wants to collaborate on \"{project['title']}\"",
+        "actor_id": user["_id"],
+        "is_read": False,
+        "created_at": utc_now_iso(),
+    }
+    result_collab_notif = await db.notifications.insert_one(collab_notif)
+    await manager.send_to_user(project["user_id"], {
+        "type": "notification",
+        "data": {**collab_notif, "id": str(result_collab_notif.inserted_id)},
+    })
     await manager.broadcast(
         {
             "type": "new_collaboration_request",

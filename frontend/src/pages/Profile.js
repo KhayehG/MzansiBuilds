@@ -552,7 +552,7 @@ const Profile = () => {
                                                     {follower.bio && <p className="text-sm text-text-secondary line-clamp-1">{follower.bio}</p>}
                                                 </div>
                                             </Link>
-                                            <FollowButton userId={follower.id} size="small" />
+                                            <FollowButton userId={follower.id} initialIsFollowing={follower.is_following} size="small" />
                                         </div>
                                     ))
                                 ) : (

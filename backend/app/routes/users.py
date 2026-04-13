@@ -185,6 +185,19 @@ async def follow_user(user_id: str, request: Request):
     await db.users.update_one({"_id": target_oid}, {"$inc": {"follower_count": 1}})
 
     await email_service.send_notification_email(user_id, "new_follower", {"follower_name": current_user["username"]})
+    notification_doc = {
+        "user_id": user_id,
+        "type": "new_follow",
+        "message": f"@{current_user['username']} started following you",
+        "actor_id": current_user["_id"],
+        "is_read": False,
+        "created_at": utc_now_iso(),
+    }
+    result_notif = await db.notifications.insert_one(notification_doc)
+    await manager.send_to_user(user_id, {
+        "type": "notification",
+        "data": {**notification_doc, "id": str(result_notif.inserted_id)},
+    })
     await manager.broadcast(
         {
             "type": "new_follow",
@@ -219,7 +232,7 @@ async def unfollow_user(user_id: str, request: Request):
 
 
 @router.get("/{user_id}/followers")
-async def get_followers(user_id: str, skip: int = 0, limit: int = 20):
+async def get_followers(user_id: str, request: Request, skip: int = 0, limit: int = 20):
     validate_object_id(user_id)
     follows = await db.follows.find({"following_id": user_id}).skip(skip).limit(limit).to_list(limit)
     follower_ids = [follow["follower_id"] for follow in follows]
@@ -230,6 +243,12 @@ async def get_followers(user_id: str, skip: int = 0, limit: int = 20):
     ).to_list(500)
     user_map = {str(user["_id"]): user for user in users}
 
+    current_user = await get_optional_user(request)
+    my_following_ids: set[str] = set()
+    if current_user:
+        my_follows = await db.follows.find({"follower_id": current_user["_id"]}).to_list(500)
+        my_following_ids = {f["following_id"] for f in my_follows}
+
     return [
         {
             "id": follow["follower_id"],
@@ -237,6 +256,7 @@ async def get_followers(user_id: str, skip: int = 0, limit: int = 20):
             "bio": user_map[follow["follower_id"]].get("bio", ""),
             "profile_picture_url": user_map[follow["follower_id"]].get("profile_picture_url"),
             "followed_at": follow.get("created_at", ""),
+            "is_following": follow["follower_id"] in my_following_ids,
         }
         for follow in follows
         if follow["follower_id"] in user_map
