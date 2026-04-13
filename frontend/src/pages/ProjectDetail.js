@@ -242,7 +242,7 @@ const ProjectDetail = () => {
     );
 
     const onCommentAdded = (newComment) => {
-        setComments(prev => [newComment, ...prev]);
+        setComments(prev => mergeIncomingComment(prev, newComment));
     };
 
     const milestonesByStage = milestones.reduce((acc, milestone) => {

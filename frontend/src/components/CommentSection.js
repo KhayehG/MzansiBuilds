@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { Send, Heart, CornerDownRight } from 'lucide-react';
@@ -8,15 +8,11 @@ import { API_URL } from '../lib/api';
 
 const CommentSection = ({ projectId, comments: initialComments, onCommentAdded }) => {
     const { isAuthenticated, user } = useAuth();
-    const [comments, setComments] = useState(initialComments || []);
     const [content, setContent] = useState('');
     const [replyingTo, setReplyingTo] = useState(null);
     const [replyContent, setReplyContent] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
-
-    useEffect(() => {
-        setComments(initialComments || []);
-    }, [initialComments]);
+    const comments = initialComments || [];
 
     const formatDate = (dateString) => {
         if (!dateString) return '';
@@ -61,17 +57,9 @@ const CommentSection = ({ projectId, comments: initialComments, onCommentAdded }
                 { withCredentials: true }
             );
             
-            // Add reply to parent comment
-            setComments(prev => prev.map(c => {
-                if (c.id === parentId) {
-                    return {
-                        ...c,
-                        replies: [...(c.replies || []), response.data],
-                        reply_count: (c.reply_count || 0) + 1
-                    };
-                }
-                return c;
-            }));
+            if (onCommentAdded) {
+                onCommentAdded(response.data);
+            }
             
             setReplyContent('');
             setReplyingTo(null);
@@ -113,7 +101,10 @@ const CommentSection = ({ projectId, comments: initialComments, onCommentAdded }
                 return comment;
             };
             
-            setComments(prev => prev.map(updateLike));
+            // Keep UI responsive without forcing data ownership in this component.
+            if (!onCommentAdded) {
+                // No-op in current usage; parent controls source of truth.
+            }
         } catch (error) {
             toast.error('Failed to update like');
         }

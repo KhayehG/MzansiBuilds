@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
@@ -10,6 +10,10 @@ import { API_URL } from '../lib/api';
 const UpdateFeed = ({ updates: initialUpdates, showProjectLink = false }) => {
     const { isAuthenticated } = useAuth();
     const [updates, setUpdates] = useState(initialUpdates || []);
+
+    useEffect(() => {
+        setUpdates(initialUpdates || []);
+    }, [initialUpdates]);
 
     const formatDate = (dateString) => {
         if (!dateString) return '';

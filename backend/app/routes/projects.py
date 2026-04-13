@@ -293,11 +293,15 @@ async def update_project(project_id: str, project_data: ProjectUpdate, request: 
 
     update_data = {key: value for key, value in project_data.model_dump().items() if value is not None}
     if "current_stage" in update_data:
-        raise HTTPException(status_code=400, detail="Use stage transition endpoints to change current_stage")
+        sdlc_type = project.get("sdlc_type", "waterfall")
+        if update_data["current_stage"] not in get_stage_flow(sdlc_type):
+            raise HTTPException(status_code=400, detail="current_stage is invalid for selected sdlc_type")
+        update_data["stage"] = to_legacy_stage(update_data["current_stage"], sdlc_type)
 
     if "stage" in update_data:
         sdlc_type = project.get("sdlc_type", "waterfall")
-        update_data["current_stage"] = from_legacy_stage(update_data["stage"], sdlc_type)
+        if "current_stage" not in update_data:
+            update_data["current_stage"] = from_legacy_stage(update_data["stage"], sdlc_type)
     if update_data:
         update_data["updated_at"] = utc_now_iso()
         await db.projects.update_one({"_id": oid}, {"$set": update_data})
