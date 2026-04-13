@@ -1,6 +1,14 @@
 from __future__ import annotations
 
+import os
 from bson import ObjectId
+
+try:
+    import resend as resend_module
+    RESEND_AVAILABLE = True
+except ImportError:
+    resend_module = None
+    RESEND_AVAILABLE = False
 
 from ..core.database import db
 from ..core.config import logger
@@ -8,11 +16,49 @@ from ..utils.common import utc_now_iso
 
 
 class EmailService:
-    """Simple notification email facade. Replace with a real provider in production."""
+    """Email notification service using Resend for production, mock for development."""
+
+    _configured = False
+
+    @classmethod
+    def _configure_resend(cls):
+        """Lazy-configure Resend with API key."""
+        if not cls._configured and RESEND_AVAILABLE:
+            api_key = os.environ.get("RESEND_API_KEY")
+            if api_key:
+                resend_module.api_key = api_key
+                cls._configured = True
+                logger.info("Resend email client configured")
+        return cls._configured
 
     @staticmethod
     async def send_email(to: str, subject: str, html: str, email_type: str = "general") -> bool:
-        logger.info("[MOCK EMAIL] To: %s, Subject: %s, Type: %s", to, subject, email_type)
+        configured = EmailService._configure_resend()
+        from_email = os.environ.get("RESEND_FROM_EMAIL", "noreply@mzansibuilds.com")
+
+        # Try real Resend first
+        if configured:
+            try:
+                result = resend_module.Emails.send(
+                    {
+                        "from": from_email,
+                        "to": to,
+                        "subject": subject,
+                        "html": html,
+                    }
+                )
+                status = "sent"
+                logger.info("Email sent via Resend to %s (ID: %s)", to, getattr(result, 'id', None))
+            except Exception as e:
+                logger.error("Resend email failed for %s: %s", to, str(e))
+                status = "failed"
+                return False
+        else:
+            # Fallback to mock for development
+            logger.warning("[MOCK EMAIL] To: %s, Subject: %s, Type: %s (Resend not configured)", to, subject, email_type)
+            status = "mocked"
+
+        # Log all email attempts
         await db.email_logs.insert_one(
             {
                 "to": to,
@@ -20,10 +66,11 @@ class EmailService:
                 "html": html,
                 "email_type": email_type,
                 "sent_at": utc_now_iso(),
-                "status": "mocked",
+                "status": status,
+                "from": from_email,
             }
         )
-        return True
+        return status in ("sent", "mocked")
 
     @staticmethod
     async def send_notification_email(user_id: str, notification_type: str, data: dict) -> bool:

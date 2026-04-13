@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 from bson import ObjectId
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from ..core.database import db
 from ..models.schemas import UserProfileUpdate
@@ -16,8 +16,12 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 
 @router.get("")
-async def list_users(q: str | None = None, skip: int = 0, limit: int = 20, request: Request = None):
-    limit = max(1, min(limit, 50))
+async def list_users(
+    q: str | None = None,
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    request: Request = None,
+):
     query: dict = {}
 
     if q and q.strip():
@@ -28,7 +32,7 @@ async def list_users(q: str | None = None, skip: int = 0, limit: int = 20, reque
             {"skills": pattern},
         ]
 
-    users = await db.users.find(query, {"password_hash": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    users = await db.users.find(query, {"password_hash": 0}).sort("created_at", -1).skip(offset).limit(limit).to_list(limit)
     if not users:
         return []
 

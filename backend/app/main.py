@@ -16,7 +16,7 @@ from .core.database import (
     seed_admin_user,
     write_test_credentials,
 )
-from .routes import auth, collaborations, community, projects, system, users
+from .routes import auth, collaboration, collaborations, community, projects, reports, system, users
 from .services.realtime import manager
 
 
@@ -57,7 +57,9 @@ for router in (
     users.router,
     projects.router,
     collaborations.router,
+    collaboration.router,
     community.router,
+    reports.router,
     system.router,
 ):
     app.include_router(router, prefix="/api")
