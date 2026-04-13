@@ -94,7 +94,6 @@ async def get_projects(
             search_filters.append({"user_id": {"$in": [str(user["_id"]) for user in matching_users]}})
         query["$or"] = search_filters
 
-    total = await db.projects.count_documents(query)
     projects = await db.projects.find(query).sort("created_at", -1).skip(offset).limit(limit).to_list(limit)
     user_ids = list({project["user_id"] for project in projects})
     users = await db.users.find(
@@ -128,12 +127,7 @@ async def get_projects(
                 "created_at": project.get("created_at", ""),
             }
         )
-    return {
-        "total": total,
-        "limit": limit,
-        "offset": offset,
-        "projects": result,
-    }
+    return result
 
 
 @router.get("/{project_id}")

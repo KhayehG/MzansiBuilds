@@ -32,15 +32,9 @@ async def list_users(
             {"skills": pattern},
         ]
 
-    total = await db.users.count_documents(query)
     users = await db.users.find(query, {"password_hash": 0}).sort("created_at", -1).skip(offset).limit(limit).to_list(limit)
     if not users:
-        return {
-            "total": total,
-            "limit": limit,
-            "offset": offset,
-            "users": [],
-        }
+        return []
 
     user_ids = [str(user["_id"]) for user in users]
     projects = await db.projects.find({"user_id": {"$in": user_ids}}, {"user_id": 1, "stage": 1}).to_list(1000)
@@ -61,27 +55,22 @@ async def list_users(
         ).to_list(limit)
         following_ids = {follow["following_id"] for follow in follows}
 
-    return {
-        "total": total,
-        "limit": limit,
-        "offset": offset,
-        "users": [
-            {
-                "id": str(user["_id"]),
-                "username": user["username"],
-                "bio": user.get("bio", ""),
-                "profile_picture_url": user.get("profile_picture_url"),
-                "skills": user.get("skills", []),
-                "follower_count": user.get("follower_count", 0),
-                "following_count": user.get("following_count", 0),
-                "project_count": project_counts.get(str(user["_id"]), 0),
-                "completed_count": completed_counts.get(str(user["_id"]), 0),
-                "is_following": bool(current_user and current_user["_id"] != str(user["_id"]) and str(user["_id"]) in following_ids),
-                "created_at": user.get("created_at", ""),
-            }
-            for user in users
-        ],
-    }
+    return [
+        {
+            "id": str(user["_id"]),
+            "username": user["username"],
+            "bio": user.get("bio", ""),
+            "profile_picture_url": user.get("profile_picture_url"),
+            "skills": user.get("skills", []),
+            "follower_count": user.get("follower_count", 0),
+            "following_count": user.get("following_count", 0),
+            "project_count": project_counts.get(str(user["_id"]), 0),
+            "completed_count": completed_counts.get(str(user["_id"]), 0),
+            "is_following": bool(current_user and current_user["_id"] != str(user["_id"]) and str(user["_id"]) in following_ids),
+            "created_at": user.get("created_at", ""),
+        }
+        for user in users
+    ]
 
 
 @router.get("/{user_id}")
