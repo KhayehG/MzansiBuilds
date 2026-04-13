@@ -23,6 +23,8 @@ const ProjectDetail = () => {
     const [project, setProject] = useState(null);
     const [updates, setUpdates] = useState([]);
     const [comments, setComments] = useState([]);
+    const [stageProgress, setStageProgress] = useState([]);
+    const [milestones, setMilestones] = useState([]);
     const [collaborations, setCollaborations] = useState([]);
     const [loading, setLoading] = useState(true);
     const [newUpdate, setNewUpdate] = useState('');
@@ -30,18 +32,22 @@ const ProjectDetail = () => {
     const [isRequestingCollab, setIsRequestingCollab] = useState(false);
     const [collabMessage, setCollabMessage] = useState('');
     const [showCollabForm, setShowCollabForm] = useState(false);
-    const [activeTab, setActiveTab] = useState('updates');
+    const [activeTab, setActiveTab] = useState('sdlc');
 
     const fetchData = useCallback(async () => {
         try {
-            const [projectRes, updatesRes, commentsRes] = await Promise.all([
+            const [projectRes, updatesRes, commentsRes, stagesRes, milestonesRes] = await Promise.all([
                 axios.get(`${API_URL}/api/projects/${projectId}`),
                 axios.get(`${API_URL}/api/projects/${projectId}/updates`),
-                axios.get(`${API_URL}/api/projects/${projectId}/comments`)
+                axios.get(`${API_URL}/api/projects/${projectId}/comments`),
+                axios.get(`${API_URL}/api/projects/${projectId}/stages`),
+                axios.get(`${API_URL}/api/projects/${projectId}/milestones`)
             ]);
             setProject(projectRes.data);
             setUpdates(updatesRes.data);
             setComments(commentsRes.data);
+            setStageProgress(stagesRes.data || []);
+            setMilestones(milestonesRes.data || []);
 
             // Fetch collaborations if authenticated
             if (isAuthenticated) {
@@ -114,8 +120,22 @@ const ProjectDetail = () => {
         }
     }, [lastMessage, projectId, mergeIncomingComment]);
 
-    const getStageBadge = (stage) => {
-        switch (stage) {
+    const formatStageLabel = (value) => {
+        if (!value) return '';
+        return value
+            .split('_')
+            .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+            .join(' ');
+    };
+
+    const getCurrentStageBadge = () => {
+        const activeStage = stageProgress.find((stage) => stage.status === 'Active' || stage.status === 'Reopened');
+        const current = activeStage?.stage_name || project?.current_stage;
+        if (current) {
+            return <span className="badge-in-progress">{formatStageLabel(current)}</span>;
+        }
+
+        switch (project?.stage) {
             case 'idea':
                 return <span className="badge-idea">IDEA</span>;
             case 'in_progress':
@@ -123,8 +143,16 @@ const ProjectDetail = () => {
             case 'completed':
                 return <span className="badge-completed">SHIPPED</span>;
             default:
-                return <span className="badge-idea">{stage?.toUpperCase()}</span>;
+                return <span className="badge-idea">{String(project?.stage || '').toUpperCase()}</span>;
         }
+    };
+
+    const getStageStatusBadge = (status) => {
+        if (status === 'Completed') return <span className="badge-completed">COMPLETED</span>;
+        if (status === 'Active') return <span className="badge-in-progress">ACTIVE</span>;
+        if (status === 'Reopened') return <span className="badge-idea">REOPENED</span>;
+        if (status === 'Skipped') return <span className="badge-idea">SKIPPED</span>;
+        return <span className="badge-idea">PENDING</span>;
     };
 
     const formatDate = (dateString) => {
@@ -217,6 +245,14 @@ const ProjectDetail = () => {
         setComments(prev => [newComment, ...prev]);
     };
 
+    const milestonesByStage = milestones.reduce((acc, milestone) => {
+        if (!acc[milestone.stage_name]) {
+            acc[milestone.stage_name] = [];
+        }
+        acc[milestone.stage_name].push(milestone);
+        return acc;
+    }, {});
+
     if (loading) {
         return (
             <div className="min-h-screen bg-background">
@@ -252,7 +288,10 @@ const ProjectDetail = () => {
                     <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
                         <div>
                             <div className="flex items-center gap-3 mb-3">
-                                {getStageBadge(project.stage)}
+                                {getCurrentStageBadge()}
+                                {project.sdlc_type && (
+                                    <span className="badge-idea">{String(project.sdlc_type).toUpperCase()}</span>
+                                )}
                                 <span className="text-sm text-text-secondary font-mono flex items-center gap-1">
                                     <Clock className="w-4 h-4" />
                                     {formatDate(project.created_at)}
@@ -445,6 +484,15 @@ const ProjectDetail = () => {
                     >
                         Comments ({comments.length})
                     </button>
+                    <button
+                        onClick={() => setActiveTab('sdlc')}
+                        className={`flex-1 py-3 text-sm font-bold uppercase tracking-wider transition-colors ${
+                            activeTab === 'sdlc' ? 'bg-black text-white' : 'bg-white hover:bg-gray-50'
+                        }`}
+                        data-testid="tab-sdlc"
+                    >
+                        SDLC Timeline
+                    </button>
                 </div>
 
                 {/* Updates Tab */}
@@ -487,6 +535,70 @@ const ProjectDetail = () => {
                         comments={comments}
                         onCommentAdded={onCommentAdded}
                     />
+                )}
+
+                {activeTab === 'sdlc' && (
+                    <div className="card-brutalist p-6" data-testid="sdlc-timeline">
+                        <h3 className="font-heading font-bold text-xl uppercase tracking-tight mb-5">
+                            SDLC Stage Timeline
+                        </h3>
+
+                        {stageProgress.length === 0 ? (
+                            <p className="text-text-secondary">No stage data available yet.</p>
+                        ) : (
+                            <div className="space-y-6">
+                                {stageProgress.map((stage) => {
+                                    const stageMilestones = milestonesByStage[stage.stage_name] || [];
+                                    return (
+                                        <div key={stage.stage_name} className="sdlc-stage-block">
+                                            <div className="flex items-center justify-between gap-3 mb-3">
+                                                <h4 className="font-bold uppercase tracking-wider text-sm">
+                                                    {formatStageLabel(stage.stage_name)}
+                                                </h4>
+                                                <div className="flex items-center gap-2">
+                                                    {stage.source === 'External' && (
+                                                        <span className="badge-idea">EXTERNAL</span>
+                                                    )}
+                                                    {getStageStatusBadge(stage.status)}
+                                                </div>
+                                            </div>
+
+                                            <div className="timeline-vertical">
+                                                {stageMilestones.length === 0 ? (
+                                                    <div className="timeline-item muted">
+                                                        <div className="timeline-node" />
+                                                        <div className="timeline-content">
+                                                            <p className="text-text-secondary text-sm">No milestones for this stage yet.</p>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    stageMilestones.map((milestone) => (
+                                                        <div key={milestone.id} className="timeline-item">
+                                                            <div className="timeline-node" />
+                                                            <div className="timeline-content">
+                                                                <p className="font-semibold text-sm">{milestone.title}</p>
+                                                                {milestone.description && (
+                                                                    <p className="text-text-secondary text-sm mt-1">{milestone.description}</p>
+                                                                )}
+                                                                <div className="flex items-center gap-2 mt-2">
+                                                                    {milestone.is_retrospective && (
+                                                                        <span className="badge-idea">RETROSPECTIVE</span>
+                                                                    )}
+                                                                    <span className="text-xs text-text-secondary font-mono">
+                                                                        {formatDate(milestone.created_at)}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ))
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
                 )}
             </main>
         </div>

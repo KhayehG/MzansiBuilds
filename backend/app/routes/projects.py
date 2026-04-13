@@ -318,7 +318,7 @@ async def update_project(project_id: str, project_data: ProjectUpdate, request: 
 
 @router.get("/{project_id}/stages")
 async def get_stage_progress(project_id: str, request: Request):
-    await get_current_user(request)
+    await get_optional_user(request)
     project = await db.projects.find_one({"_id": validate_object_id(project_id)})
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -560,7 +560,7 @@ async def create_milestone(project_id: str, milestone_data: MilestoneCreate, req
 
 @router.get("/{project_id}/milestones")
 async def get_milestones(project_id: str, request: Request, stage_name: str | None = None):
-    await get_current_user(request)
+    await get_optional_user(request)
     project = await db.projects.find_one({"_id": validate_object_id(project_id)})
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
