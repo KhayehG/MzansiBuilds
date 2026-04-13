@@ -14,7 +14,8 @@ const Dashboard = () => {
     const [feed, setFeed] = useState([]);
     const [projects, setProjects] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [filter, setFilter] = useState('all'); // all, idea, in_progress, completed
+    const [sdlcFilter, setSdlcFilter] = useState('all');
+    const [stageFilter, setStageFilter] = useState('all');
     const [viewMode, setViewMode] = useState('feed'); // feed, projects
     const [feedMode, setFeedMode] = useState('global'); // global, following
     const [searchTerm, setSearchTerm] = useState('');
@@ -22,11 +23,33 @@ const Dashboard = () => {
     const { lastMessage, isConnected } = useWebSocket();
     const { isAuthenticated } = useAuth();
 
+    const SDLC_STAGE_OPTIONS = {
+        waterfall: [
+            { value: 'planning', label: 'Planning' },
+            { value: 'requirements', label: 'Requirements' },
+            { value: 'design', label: 'Design' },
+            { value: 'development', label: 'Development' },
+            { value: 'testing', label: 'Testing' },
+            { value: 'deployment', label: 'Deployment' },
+            { value: 'maintenance', label: 'Maintenance' },
+        ],
+        agile: [
+            { value: 'backlog', label: 'Backlog' },
+            { value: 'sprint_planning', label: 'Sprint Planning' },
+            { value: 'development', label: 'Development' },
+            { value: 'testing', label: 'Testing' },
+            { value: 'review', label: 'Review' },
+        ],
+    };
+
     const fetchData = useCallback(async () => {
         try {
             const projectParams = new URLSearchParams();
-            if (filter !== 'all') {
-                projectParams.set('stage', filter);
+            if (sdlcFilter !== 'all') {
+                projectParams.set('sdlc_type', sdlcFilter);
+            }
+            if (stageFilter !== 'all') {
+                projectParams.set('current_stage', stageFilter);
             }
             if (searchTerm.trim()) {
                 projectParams.set('q', searchTerm.trim());
@@ -53,7 +76,7 @@ const Dashboard = () => {
         } finally {
             setLoading(false);
         }
-    }, [filter, feedMode, searchTerm]);
+    }, [sdlcFilter, stageFilter, feedMode, searchTerm]);
 
     useEffect(() => {
         fetchData();
@@ -81,9 +104,7 @@ const Dashboard = () => {
 
     const normalizedSearch = searchTerm.trim().toLowerCase();
 
-    const filteredProjects = filter === 'all' 
-        ? projects 
-        : projects.filter(p => p.stage === filter);
+    const filteredProjects = projects;
 
     const filteredFeed = normalizedSearch
         ? feed.filter((item) => {
@@ -182,19 +203,46 @@ const Dashboard = () => {
                         />
                     </div>
 
-                    {/* Filter */}
+                    {/* SDLC Filter */}
                     <div className="flex items-center gap-2">
                         <Filter className="w-4 h-4 text-text-secondary" />
                         <select
-                            value={filter}
-                            onChange={(e) => setFilter(e.target.value)}
+                            value={sdlcFilter}
+                            onChange={(e) => {
+                                const nextSdlc = e.target.value;
+                                setSdlcFilter(nextSdlc);
+                                if (nextSdlc !== 'all') {
+                                    const valid = SDLC_STAGE_OPTIONS[nextSdlc].some((s) => s.value === stageFilter);
+                                    if (!valid) {
+                                        setStageFilter('all');
+                                    }
+                                }
+                            }}
                             className="input-brutalist py-2 text-sm"
-                            data-testid="filter-select"
+                            data-testid="filter-sdlc"
                         >
-                            <option value="all">All Stages</option>
-                            <option value="idea">Ideas</option>
-                            <option value="in_progress">In Progress</option>
-                            <option value="completed">Completed</option>
+                            <option value="all">All SDLC Types</option>
+                            <option value="waterfall">Waterfall</option>
+                            <option value="agile">Agile</option>
+                        </select>
+                    </div>
+
+                    {/* Stage Filter */}
+                    <div className="flex items-center gap-2">
+                        <Filter className="w-4 h-4 text-text-secondary" />
+                        <select
+                            value={stageFilter}
+                            onChange={(e) => setStageFilter(e.target.value)}
+                            className="input-brutalist py-2 text-sm"
+                            data-testid="filter-stage"
+                        >
+                            <option value="all">All Current Stages</option>
+                            {(sdlcFilter === 'all'
+                                ? [...SDLC_STAGE_OPTIONS.waterfall, ...SDLC_STAGE_OPTIONS.agile]
+                                : SDLC_STAGE_OPTIONS[sdlcFilter]
+                            ).map((stage) => (
+                                <option key={stage.value} value={stage.value}>{stage.label}</option>
+                            ))}
                         </select>
                     </div>
 

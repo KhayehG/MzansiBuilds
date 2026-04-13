@@ -173,6 +173,8 @@ async def create_project(project_data: ProjectCreate, request: Request):
 @router.get("")
 async def get_projects(
     stage: str | None = None,
+    sdlc_type: str | None = None,
+    current_stage: str | None = None,
     user_id: str | None = None,
     q: str | None = None,
     limit: int = Query(50, ge=1, le=500),
@@ -182,6 +184,10 @@ async def get_projects(
     query: dict = {}
     if stage:
         query["stage"] = stage
+    if sdlc_type:
+        query["sdlc_type"] = sdlc_type
+    if current_stage:
+        query["current_stage"] = current_stage
     if user_id:
         query["user_id"] = user_id
     query["hidden"] = {"$ne": True}  # Exclude hidden projects
