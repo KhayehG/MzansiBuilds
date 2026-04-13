@@ -9,8 +9,11 @@ from ..core.database import db
 from ..models.schemas import (
     CollaborationRequestCreate,
     CommentCreate,
+    MilestoneCreate,
+    MilestoneUpdate,
     ProjectCreate,
     ProjectUpdate,
+    StageTransitionCreate,
     UpdateCreate,
 )
 from ..services.auth import get_current_user, get_optional_user, validate_object_id
@@ -20,15 +23,72 @@ from ..utils.common import clean_text, utc_now_iso
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
+WATERFALL_STAGES = [
+    "planning",
+    "requirements",
+    "design",
+    "development",
+    "testing",
+    "deployment",
+    "maintenance",
+]
+AGILE_STAGES = ["backlog", "sprint_planning", "development", "testing", "review"]
+
+
+def get_stage_flow(sdlc_type: str) -> list[str]:
+    return AGILE_STAGES if sdlc_type == "agile" else WATERFALL_STAGES
+
+
+def to_legacy_stage(current_stage: str, sdlc_type: str) -> str:
+    if sdlc_type == "agile":
+        if current_stage in ("backlog", "sprint_planning"):
+            return "idea"
+        if current_stage == "review":
+            return "completed"
+        return "in_progress"
+
+    if current_stage in ("planning", "requirements", "design"):
+        return "idea"
+    if current_stage == "maintenance":
+        return "completed"
+    return "in_progress"
+
+
+def from_legacy_stage(stage: str, sdlc_type: str) -> str:
+    if sdlc_type == "agile":
+        return {
+            "idea": "backlog",
+            "in_progress": "development",
+            "completed": "review",
+        }.get(stage, "backlog")
+
+    return {
+        "idea": "planning",
+        "in_progress": "development",
+        "completed": "maintenance",
+    }.get(stage, "planning")
+
 
 @router.post("")
 async def create_project(project_data: ProjectCreate, request: Request):
     user = await get_current_user(request)
+    sdlc_type = project_data.sdlc_type
+    stage_flow = get_stage_flow(sdlc_type)
+    current_stage = project_data.current_stage or from_legacy_stage(project_data.stage, sdlc_type)
+    if current_stage not in stage_flow:
+        raise HTTPException(status_code=400, detail="current_stage is invalid for selected sdlc_type")
+
+    current_index = stage_flow.index(current_stage)
+    legacy_stage = to_legacy_stage(current_stage, sdlc_type)
+
     project_doc = {
         "user_id": user["_id"],
         "title": project_data.title,
         "description": project_data.description,
-        "stage": project_data.stage,
+        "stage": legacy_stage,
+        "sdlc_type": sdlc_type,
+        "current_stage": current_stage,
+        "project_origin_stage": current_stage,
         "support_needed": clean_text(project_data.support_needed),
         "like_count": 0,
         "comment_count": 0,
@@ -37,6 +97,46 @@ async def create_project(project_data: ProjectCreate, request: Request):
     result = await db.projects.insert_one(project_doc)
     project_id = str(result.inserted_id)
 
+    progress_docs = []
+    now = utc_now_iso()
+    for index, stage_name in enumerate(stage_flow):
+        if index < current_index:
+            progress_docs.append(
+                {
+                    "project_id": project_id,
+                    "stage_name": stage_name,
+                    "status": "Completed",
+                    "source": "External",
+                    "started_at": now,
+                    "completed_at": now,
+                }
+            )
+        elif index == current_index:
+            progress_docs.append(
+                {
+                    "project_id": project_id,
+                    "stage_name": stage_name,
+                    "status": "Active",
+                    "source": "User",
+                    "started_at": now,
+                    "completed_at": None,
+                }
+            )
+        else:
+            progress_docs.append(
+                {
+                    "project_id": project_id,
+                    "stage_name": stage_name,
+                    "status": "Pending",
+                    "source": "System",
+                    "started_at": None,
+                    "completed_at": None,
+                }
+            )
+
+    if progress_docs:
+        await db.stage_progress.insert_many(progress_docs)
+
     await manager.broadcast(
         {
             "type": "new_project",
@@ -44,7 +144,9 @@ async def create_project(project_data: ProjectCreate, request: Request):
                 "id": project_id,
                 "title": project_data.title,
                 "description": project_data.description,
-                "stage": project_data.stage,
+                "stage": legacy_stage,
+                "sdlc_type": sdlc_type,
+                "current_stage": current_stage,
                 "support_needed": clean_text(project_data.support_needed),
                 "user_id": user["_id"],
                 "username": user["username"],
@@ -58,7 +160,9 @@ async def create_project(project_data: ProjectCreate, request: Request):
         "id": project_id,
         "title": project_data.title,
         "description": project_data.description,
-        "stage": project_data.stage,
+        "stage": legacy_stage,
+        "sdlc_type": sdlc_type,
+        "current_stage": current_stage,
         "support_needed": clean_text(project_data.support_needed),
         "user_id": user["_id"],
         "username": user["username"],
@@ -117,6 +221,8 @@ async def get_projects(
                 "title": project["title"],
                 "description": project["description"],
                 "stage": project["stage"],
+                "sdlc_type": project.get("sdlc_type", "waterfall"),
+                "current_stage": project.get("current_stage", from_legacy_stage(project["stage"], project.get("sdlc_type", "waterfall"))),
                 "support_needed": project.get("support_needed", ""),
                 "user_id": project["user_id"],
                 "username": project_user.get("username", "Unknown"),
@@ -159,6 +265,8 @@ async def get_project(project_id: str, request: Request):
         "title": project["title"],
         "description": project["description"],
         "stage": project["stage"],
+        "sdlc_type": project.get("sdlc_type", "waterfall"),
+        "current_stage": project.get("current_stage", from_legacy_stage(project["stage"], project.get("sdlc_type", "waterfall"))),
         "support_needed": project.get("support_needed", ""),
         "user_id": project["user_id"],
         "username": user["username"] if user else "Unknown",
@@ -184,6 +292,12 @@ async def update_project(project_id: str, project_data: ProjectUpdate, request: 
         raise HTTPException(status_code=403, detail="Not authorized to update this project")
 
     update_data = {key: value for key, value in project_data.model_dump().items() if value is not None}
+    if "current_stage" in update_data:
+        raise HTTPException(status_code=400, detail="Use stage transition endpoints to change current_stage")
+
+    if "stage" in update_data:
+        sdlc_type = project.get("sdlc_type", "waterfall")
+        update_data["current_stage"] = from_legacy_stage(update_data["stage"], sdlc_type)
     if update_data:
         update_data["updated_at"] = utc_now_iso()
         await db.projects.update_one({"_id": oid}, {"$set": update_data})
@@ -194,10 +308,331 @@ async def update_project(project_id: str, project_data: ProjectUpdate, request: 
         "title": updated["title"],
         "description": updated["description"],
         "stage": updated["stage"],
+        "sdlc_type": updated.get("sdlc_type", "waterfall"),
+        "current_stage": updated.get("current_stage", from_legacy_stage(updated["stage"], updated.get("sdlc_type", "waterfall"))),
         "support_needed": updated.get("support_needed", ""),
         "user_id": updated["user_id"],
         "created_at": updated.get("created_at", ""),
     }
+
+
+@router.get("/{project_id}/stages")
+async def get_stage_progress(project_id: str, request: Request):
+    await get_current_user(request)
+    project = await db.projects.find_one({"_id": validate_object_id(project_id)})
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    stage_flow = get_stage_flow(project.get("sdlc_type", "waterfall"))
+    rows = await db.stage_progress.find({"project_id": project_id}).to_list(200)
+    row_map = {row["stage_name"]: row for row in rows}
+
+    result = []
+    for stage_name in stage_flow:
+        row = row_map.get(stage_name)
+        result.append(
+            {
+                "stage_name": stage_name,
+                "status": row.get("status", "Pending") if row else "Pending",
+                "source": row.get("source", "System") if row else "System",
+                "started_at": row.get("started_at") if row else None,
+                "completed_at": row.get("completed_at") if row else None,
+            }
+        )
+    return result
+
+
+@router.get("/{project_id}/stage-history")
+async def get_stage_history(project_id: str, request: Request):
+    await get_current_user(request)
+    project = await db.projects.find_one({"_id": validate_object_id(project_id)})
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    history = await db.stage_history.find({"project_id": project_id}).sort("changed_at", -1).to_list(500)
+    return [
+        {
+            "id": str(item["_id"]),
+            "project_id": item["project_id"],
+            "from_stage": item.get("from_stage"),
+            "to_stage": item.get("to_stage"),
+            "reason": item.get("reason", ""),
+            "changed_at": item.get("changed_at", ""),
+        }
+        for item in history
+    ]
+
+
+@router.post("/{project_id}/stages/complete")
+async def complete_current_stage(project_id: str, request: Request):
+    user = await get_current_user(request)
+    project = await db.projects.find_one({"_id": validate_object_id(project_id)})
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if project["user_id"] != user["_id"]:
+        raise HTTPException(status_code=403, detail="Only project owner can complete a stage")
+
+    sdlc_type = project.get("sdlc_type", "waterfall")
+    stage_flow = get_stage_flow(sdlc_type)
+    current_stage = project.get("current_stage", from_legacy_stage(project.get("stage", "idea"), sdlc_type))
+    if current_stage not in stage_flow:
+        raise HTTPException(status_code=400, detail="Invalid current stage")
+
+    current_index = stage_flow.index(current_stage)
+    now = utc_now_iso()
+
+    await db.stage_progress.update_one(
+        {"project_id": project_id, "stage_name": current_stage},
+        {
+            "$set": {
+                "status": "Completed",
+                "source": "User",
+                "completed_at": now,
+            },
+            "$setOnInsert": {"started_at": now},
+        },
+        upsert=True,
+    )
+
+    next_stage = current_stage
+    if current_index < len(stage_flow) - 1:
+        next_stage = stage_flow[current_index + 1]
+        await db.stage_progress.update_one(
+            {"project_id": project_id, "stage_name": next_stage},
+            {
+                "$set": {
+                    "status": "Active",
+                    "source": "System",
+                    "started_at": now,
+                    "completed_at": None,
+                }
+            },
+            upsert=True,
+        )
+
+    await db.projects.update_one(
+        {"_id": project["_id"]},
+        {
+            "$set": {
+                "current_stage": next_stage,
+                "stage": to_legacy_stage(next_stage, sdlc_type),
+                "updated_at": now,
+            }
+        },
+    )
+    await db.stage_history.insert_one(
+        {
+            "project_id": project_id,
+            "from_stage": current_stage,
+            "to_stage": next_stage,
+            "reason": "Mark Stage as Complete",
+            "changed_at": now,
+        }
+    )
+
+    return {
+        "project_id": project_id,
+        "from_stage": current_stage,
+        "to_stage": next_stage,
+        "current_stage": next_stage,
+        "stage": to_legacy_stage(next_stage, sdlc_type),
+    }
+
+
+@router.post("/{project_id}/stages/move")
+async def move_stage(project_id: str, transition: StageTransitionCreate, request: Request):
+    user = await get_current_user(request)
+    project = await db.projects.find_one({"_id": validate_object_id(project_id)})
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if project["user_id"] != user["_id"]:
+        raise HTTPException(status_code=403, detail="Only project owner can move stages")
+
+    sdlc_type = project.get("sdlc_type", "waterfall")
+    stage_flow = get_stage_flow(sdlc_type)
+    current_stage = project.get("current_stage", from_legacy_stage(project.get("stage", "idea"), sdlc_type))
+    to_stage = transition.to_stage
+
+    if to_stage not in stage_flow:
+        raise HTTPException(status_code=400, detail="to_stage is invalid for this SDLC type")
+    if current_stage not in stage_flow:
+        raise HTTPException(status_code=400, detail="Invalid current stage")
+    if to_stage == current_stage:
+        raise HTTPException(status_code=400, detail="Already on selected stage")
+
+    current_index = stage_flow.index(current_stage)
+    target_index = stage_flow.index(to_stage)
+    if sdlc_type == "waterfall" and target_index > current_index + 1:
+        raise HTTPException(status_code=400, detail="Waterfall stages cannot be skipped forward")
+
+    now = utc_now_iso()
+    await db.stage_progress.update_one(
+        {"project_id": project_id, "stage_name": current_stage},
+        {"$set": {"status": "Completed", "completed_at": now, "source": "User"}},
+        upsert=True,
+    )
+
+    target_status = "Reopened" if target_index < current_index else "Active"
+    await db.stage_progress.update_one(
+        {"project_id": project_id, "stage_name": to_stage},
+        {
+            "$set": {
+                "status": target_status,
+                "source": "User",
+                "started_at": now,
+                "completed_at": None,
+            }
+        },
+        upsert=True,
+    )
+
+    await db.projects.update_one(
+        {"_id": project["_id"]},
+        {
+            "$set": {
+                "current_stage": to_stage,
+                "stage": to_legacy_stage(to_stage, sdlc_type),
+                "updated_at": now,
+            }
+        },
+    )
+    await db.stage_history.insert_one(
+        {
+            "project_id": project_id,
+            "from_stage": current_stage,
+            "to_stage": to_stage,
+            "reason": transition.reason,
+            "changed_at": now,
+        }
+    )
+    return {
+        "project_id": project_id,
+        "from_stage": current_stage,
+        "to_stage": to_stage,
+        "reason": transition.reason,
+        "current_stage": to_stage,
+    }
+
+
+@router.post("/{project_id}/milestones")
+async def create_milestone(project_id: str, milestone_data: MilestoneCreate, request: Request):
+    user = await get_current_user(request)
+    project = await db.projects.find_one({"_id": validate_object_id(project_id)})
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if project["user_id"] != user["_id"]:
+        raise HTTPException(status_code=403, detail="Only project owner can add milestones")
+
+    sdlc_type = project.get("sdlc_type", "waterfall")
+    stage_flow = get_stage_flow(sdlc_type)
+    if milestone_data.stage_name not in stage_flow:
+        raise HTTPException(status_code=400, detail="stage_name is invalid for this SDLC type")
+
+    current_stage = project.get("current_stage", from_legacy_stage(project.get("stage", "idea"), sdlc_type))
+    if milestone_data.stage_name != current_stage and not milestone_data.is_retrospective:
+        raise HTTPException(status_code=400, detail="Milestones can only be added to current_stage unless retrospective")
+
+    if milestone_data.is_retrospective:
+        stage_progress = await db.stage_progress.find_one({"project_id": project_id, "stage_name": milestone_data.stage_name})
+        if not stage_progress or stage_progress.get("status") not in ("Completed", "Skipped", "Reopened"):
+            raise HTTPException(status_code=400, detail="Retrospective milestones require a completed/skipped/reopened stage")
+
+    milestone_doc = {
+        "project_id": project_id,
+        "stage_name": milestone_data.stage_name,
+        "title": milestone_data.title,
+        "description": milestone_data.description,
+        "is_retrospective": milestone_data.is_retrospective,
+        "created_by": user["_id"],
+        "created_at": utc_now_iso(),
+    }
+    result = await db.milestones.insert_one(milestone_doc)
+    return {
+        "id": str(result.inserted_id),
+        "project_id": project_id,
+        "stage_name": milestone_data.stage_name,
+        "title": milestone_data.title,
+        "description": milestone_data.description,
+        "is_retrospective": milestone_data.is_retrospective,
+        "created_at": milestone_doc["created_at"],
+    }
+
+
+@router.get("/{project_id}/milestones")
+async def get_milestones(project_id: str, request: Request, stage_name: str | None = None):
+    await get_current_user(request)
+    project = await db.projects.find_one({"_id": validate_object_id(project_id)})
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    query: dict = {"project_id": project_id}
+    if stage_name:
+        query["stage_name"] = stage_name
+    milestones = await db.milestones.find(query).sort("created_at", 1).to_list(1000)
+    return [
+        {
+            "id": str(item["_id"]),
+            "project_id": item["project_id"],
+            "stage_name": item["stage_name"],
+            "title": item["title"],
+            "description": item.get("description", ""),
+            "is_retrospective": item.get("is_retrospective", False),
+            "created_at": item.get("created_at", ""),
+        }
+        for item in milestones
+    ]
+
+
+@router.put("/{project_id}/milestones/{milestone_id}")
+async def update_milestone(project_id: str, milestone_id: str, data: MilestoneUpdate, request: Request):
+    user = await get_current_user(request)
+    project = await db.projects.find_one({"_id": validate_object_id(project_id)})
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if project["user_id"] != user["_id"]:
+        raise HTTPException(status_code=403, detail="Only project owner can edit milestones")
+
+    update_data = {k: v for k, v in data.model_dump().items() if v is not None}
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No updates provided")
+
+    if "stage_name" in update_data:
+        sdlc_type = project.get("sdlc_type", "waterfall")
+        if update_data["stage_name"] not in get_stage_flow(sdlc_type):
+            raise HTTPException(status_code=400, detail="stage_name is invalid for this SDLC type")
+
+    result = await db.milestones.update_one(
+        {"_id": validate_object_id(milestone_id), "project_id": project_id},
+        {"$set": update_data},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Milestone not found")
+
+    updated = await db.milestones.find_one({"_id": validate_object_id(milestone_id), "project_id": project_id})
+    return {
+        "id": str(updated["_id"]),
+        "project_id": updated["project_id"],
+        "stage_name": updated["stage_name"],
+        "title": updated["title"],
+        "description": updated.get("description", ""),
+        "is_retrospective": updated.get("is_retrospective", False),
+        "created_at": updated.get("created_at", ""),
+    }
+
+
+@router.delete("/{project_id}/milestones/{milestone_id}")
+async def delete_milestone(project_id: str, milestone_id: str, request: Request):
+    user = await get_current_user(request)
+    project = await db.projects.find_one({"_id": validate_object_id(project_id)})
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if project["user_id"] != user["_id"]:
+        raise HTTPException(status_code=403, detail="Only project owner can delete milestones")
+
+    result = await db.milestones.delete_one({"_id": validate_object_id(milestone_id), "project_id": project_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Milestone not found")
+    return {"message": "Milestone deleted successfully"}
 
 
 @router.delete("/{project_id}")
@@ -215,6 +650,9 @@ async def delete_project(project_id: str, request: Request):
     await db.comments.delete_many({"project_id": project_id})
     await db.collaboration_requests.delete_many({"project_id": project_id})
     await db.likes.delete_many({"project_id": project_id})
+    await db.stage_progress.delete_many({"project_id": project_id})
+    await db.milestones.delete_many({"project_id": project_id})
+    await db.stage_history.delete_many({"project_id": project_id})
     return {"message": "Project deleted successfully"}
 
 

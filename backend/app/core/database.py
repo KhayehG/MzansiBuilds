@@ -28,6 +28,9 @@ PERSISTED_COLLECTIONS = (
     "likes",
     "email_logs",
     "reports",
+    "stage_progress",
+    "milestones",
+    "stage_history",
 )
 
 if IS_PRODUCTION and USE_MOCK_DB:
@@ -103,6 +106,13 @@ async def initialize_database() -> None:
     await db.reports.create_index("reported_by_user_id")
     await db.reports.create_index("status")
     await db.reports.create_index("created_at")
+    await db.stage_progress.create_index("project_id")
+    await db.stage_progress.create_index([("project_id", 1), ("stage_name", 1)], unique=True)
+    await db.stage_progress.create_index("status")
+    await db.milestones.create_index("project_id")
+    await db.milestones.create_index("stage_name")
+    await db.stage_history.create_index("project_id")
+    await db.stage_history.create_index("changed_at")
 
 
 async def seed_admin_user() -> None:
