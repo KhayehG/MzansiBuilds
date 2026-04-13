@@ -16,7 +16,7 @@ from .core.database import (
     seed_admin_user,
     write_test_credentials,
 )
-from .routes import auth, collaboration, collaborations, community, projects, reports, system, users
+from .routes import auth, collaboration, collaborations, community, projects, reports, system, users, chat
 from .services.realtime import manager
 
 
@@ -52,6 +52,7 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="MzansiBuilds Platform", lifespan=lifespan)
 
+
 for router in (
     auth.router,
     users.router,
@@ -61,6 +62,7 @@ for router in (
     community.router,
     reports.router,
     system.router,
+    chat.router,
 ):
     app.include_router(router, prefix="/api")
 
@@ -74,8 +76,11 @@ app.add_middleware(
 )
 
 
+
+# --- WebSocket endpoint with chat event handling ---
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, token: str | None = None):
+    import json
     user_id = None
     auth_token = token or websocket.cookies.get("access_token")
     if auth_token:
@@ -89,7 +94,29 @@ async def websocket_endpoint(websocket: WebSocket, token: str | None = None):
     await manager.connect(websocket, user_id)
     try:
         while True:
-            await websocket.receive_text()
+            data = await websocket.receive_text()
+            try:
+                event = json.loads(data)
+            except Exception:
+                continue
+
+            # Basic chat event handling
+            if event.get("type") == "chat_message":
+                # Broadcast to all participants in the conversation (stub: broadcast to all for now)
+                await manager.broadcast({
+                    "type": "chat_message",
+                    "conversation_id": event.get("conversation_id"),
+                    "sender_id": user_id,
+                    "content": event.get("content"),
+                })
+            # Typing indicator (optional)
+            elif event.get("type") == "typing":
+                await manager.broadcast({
+                    "type": "typing",
+                    "conversation_id": event.get("conversation_id"),
+                    "user_id": user_id,
+                })
+            # Extend with more event types as needed
     except WebSocketDisconnect:
         await manager.disconnect(websocket, user_id)
 

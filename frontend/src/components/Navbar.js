@@ -2,8 +2,9 @@ import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useWebSocket } from '../contexts/WebSocketContext';
-import { Code2, Home, Trophy, PlusCircle, User, LogOut, Wifi, WifiOff, Flag } from 'lucide-react';
+import { Code2, Home, Trophy, PlusCircle, User, LogOut, Wifi, WifiOff, Flag, MessageSquare } from 'lucide-react';
 import ReportModal from './ReportModal';
+import NotificationCenter from './NotificationCenter';
 
 const Navbar = () => {
     const { user, logout, isAuthenticated } = useAuth();
@@ -81,6 +82,17 @@ const Navbar = () => {
                                 </Link>
 
                                 <Link
+                                    to="/messages"
+                                    className={`flex items-center gap-1 px-3 py-2 text-sm font-bold uppercase tracking-wider transition-colors ${
+                                        isActive('/messages') ? 'text-primary border-b-2 border-primary' : 'hover:text-primary'
+                                    }`}
+                                    data-testid="nav-messages"
+                                >
+                                    <MessageSquare className="w-4 h-4" strokeWidth={2.5} />
+                                    <span className="hidden sm:inline">Messages</span>
+                                </Link>
+
+                                <Link
                                     to="/profile"
                                     className={`flex items-center gap-1 px-3 py-2 text-sm font-bold uppercase tracking-wider transition-colors ${
                                         isActive('/profile') ? 'text-primary border-b-2 border-primary' : 'hover:text-primary'
@@ -108,6 +120,9 @@ const Navbar = () => {
                                         <WifiOff className="w-4 h-4 text-gray-400" strokeWidth={2.5} />
                                     )}
                                 </div>
+
+                                {/* Notification Center */}
+                                <NotificationCenter />
 
                                 {/* Report a platform issue */}
                                 <button

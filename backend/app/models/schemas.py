@@ -118,7 +118,38 @@ class CollaborationRequestCreate(StrictBaseModel):
     message: Optional[str] = Field(default="", max_length=1000)
 
 
+
 class LikeCreate(StrictBaseModel):
     project_id: Optional[str] = None
     update_id: Optional[str] = None
     comment_id: Optional[str] = None
+
+
+# --- Messaging & Notification Schemas ---
+
+from enum import Enum
+
+class ConversationType(str, Enum):
+    project = "project"
+    private = "private"
+
+class ConversationCreate(StrictBaseModel):
+    type: ConversationType
+    project_id: Optional[str] = None  # Only for project chat
+
+class ConversationParticipantCreate(StrictBaseModel):
+    conversation_id: str
+    user_id: str
+
+class MessageCreate(StrictBaseModel):
+    conversation_id: str
+    content: str = Field(min_length=1, max_length=4000)
+
+class MessageReadUpdate(StrictBaseModel):
+    message_id: str
+    is_read: bool
+
+class NotificationCreate(StrictBaseModel):
+    user_id: str
+    message: str
+    is_read: bool = False
