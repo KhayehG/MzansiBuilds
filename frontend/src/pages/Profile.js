@@ -5,7 +5,8 @@ import { useAuth } from '../contexts/AuthContext';
 import Navbar from '../components/Navbar';
 import ProjectCard from '../components/ProjectCard';
 import FollowButton from '../components/FollowButton';
-import { User, Calendar, Rocket, Trophy, Edit2, Save, X, Github, Linkedin, Users, Circle } from 'lucide-react';
+import ReportModal from '../components/ReportModal';
+import { User, Calendar, Rocket, Trophy, Edit2, Save, X, Github, Linkedin, Users, Circle, Flag } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { API_URL } from '../lib/api';
@@ -34,6 +35,7 @@ const Profile = () => {
 
     const targetUserId = userId || currentUser?.id;
     const isOwnProfile = isAuthenticated && currentUser?.id === targetUserId;
+    const [reportUserModal, setReportUserModal] = useState(false);
 
     const fetchProfile = useCallback(async () => {
         if (!targetUserId) {
@@ -409,14 +411,32 @@ const Profile = () => {
 
                                     {/* Follow Button */}
                                     {!isOwnProfile && (
-                                        <div className="mb-4 flex justify-center">
+                                        <div className="mb-4 flex flex-col items-center gap-2">
                                             <FollowButton 
                                                 userId={targetUserId} 
                                                 initialIsFollowing={profile.is_following}
                                                 onFollowChange={handleFollowChange}
                                             />
+                                            {isAuthenticated && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setReportUserModal(true)}
+                                                    className="flex items-center gap-1 text-xs text-text-secondary hover:text-error transition-colors"
+                                                >
+                                                    <Flag className="w-3 h-3" /> Report user
+                                                </button>
+                                            )}
                                         </div>
                                     )}
+
+                                    <ReportModal
+                                        isOpen={reportUserModal}
+                                        onClose={() => setReportUserModal(false)}
+                                        reportType="user"
+                                        reportedItemId={null}
+                                        reportedUserId={targetUserId}
+                                        contextLabel={`@${profile?.username}`}
+                                    />
 
                                     <div className="border-t-2 border-gray-200 pt-4 mt-4 space-y-3">
                                         <div className="flex items-center gap-2 text-sm">

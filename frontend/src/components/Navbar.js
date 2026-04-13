@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useWebSocket } from '../contexts/WebSocketContext';
-import { Code2, Home, Trophy, PlusCircle, User, LogOut, Wifi, WifiOff } from 'lucide-react';
+import { Code2, Home, Trophy, PlusCircle, User, LogOut, Wifi, WifiOff, Flag } from 'lucide-react';
+import ReportModal from './ReportModal';
 
 const Navbar = () => {
     const { user, logout, isAuthenticated } = useAuth();
@@ -15,10 +16,20 @@ const Navbar = () => {
         navigate('/login');
     };
 
+    const [reportSystemOpen, setReportSystemOpen] = useState(false);
+
     const isActive = (path) => location.pathname === path;
 
     return (
         <header className="header-brutalist" data-testid="navbar">
+            <ReportModal
+                isOpen={reportSystemOpen}
+                onClose={() => setReportSystemOpen(false)}
+                reportType="system"
+                reportedItemId={null}
+                reportedUserId={null}
+                contextLabel="a platform issue"
+            />
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="flex items-center justify-between h-16">
                     {/* Logo */}
@@ -97,6 +108,18 @@ const Navbar = () => {
                                         <WifiOff className="w-4 h-4 text-gray-400" strokeWidth={2.5} />
                                     )}
                                 </div>
+
+                                {/* Report a platform issue */}
+                                <button
+                                    type="button"
+                                    onClick={() => setReportSystemOpen(true)}
+                                    className="flex items-center gap-1 px-3 py-2 text-sm font-bold uppercase tracking-wider text-text-secondary hover:text-error transition-colors"
+                                    title="Report a platform issue"
+                                    data-testid="nav-report-system"
+                                >
+                                    <Flag className="w-4 h-4" strokeWidth={2.5} />
+                                    <span className="hidden sm:inline">Report</span>
+                                </button>
                             </>
                         ) : (
                             <>

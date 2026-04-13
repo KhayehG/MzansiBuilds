@@ -12,7 +12,7 @@ router = APIRouter(prefix="/collaborations", tags=["collaborations"])
 @router.get("/inbox")
 async def get_collaboration_inbox(
     request: Request,
-    status: str | None = Query(None, regex="^(pending|accepted|rejected)?$"),
+    status: str | None = Query(None, pattern="^(pending|accepted|rejected)?$"),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ):
@@ -65,7 +65,7 @@ async def get_collaboration_inbox(
 @router.get("/requests-received")
 async def get_collaboration_requests_received(
     request: Request,
-    status: str | None = Query(None, regex="^(pending|accepted|rejected)?$"),
+    status: str | None = Query(None, pattern="^(pending|accepted|rejected)?$"),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ):

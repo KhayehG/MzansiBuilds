@@ -2,14 +2,24 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
-import { Rocket, FileText, ArrowRight, Heart } from 'lucide-react';
+import { Rocket, FileText, ArrowRight, Heart, Edit2, Trash2, Check, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { API_URL } from '../lib/api';
 
-const UpdateFeed = ({ updates: initialUpdates, showProjectLink = false }) => {
+const UpdateFeed = ({
+    updates: initialUpdates,
+    showProjectLink = false,
+    canManageUpdates = false,
+    onEditUpdate,
+    onDeleteUpdate,
+}) => {
     const { isAuthenticated } = useAuth();
     const [updates, setUpdates] = useState(initialUpdates || []);
+    const [editingUpdateId, setEditingUpdateId] = useState(null);
+    const [editingContent, setEditingContent] = useState('');
+    const [isSavingEdit, setIsSavingEdit] = useState(false);
+    const [deletingUpdateId, setDeletingUpdateId] = useState(null);
 
     useEffect(() => {
         setUpdates(initialUpdates || []);
@@ -46,6 +56,65 @@ const UpdateFeed = ({ updates: initialUpdates, showProjectLink = false }) => {
             }));
         } catch (error) {
             toast.error('Failed to update like');
+        }
+    };
+
+    const beginEdit = (update) => {
+        setEditingUpdateId(update.id);
+        setEditingContent(update.content || '');
+    };
+
+    const cancelEdit = () => {
+        setEditingUpdateId(null);
+        setEditingContent('');
+    };
+
+    const handleSaveEdit = async (updateId) => {
+        const nextContent = editingContent.trim();
+        if (!nextContent) {
+            toast.error('Update cannot be empty');
+            return;
+        }
+        if (typeof onEditUpdate !== 'function') {
+            toast.error('Edit action unavailable');
+            return;
+        }
+
+        setIsSavingEdit(true);
+        try {
+            await onEditUpdate(updateId, nextContent);
+            setUpdates(prev => prev.map(update => (
+                update.id === updateId
+                    ? { ...update, content: nextContent }
+                    : update
+            )));
+            cancelEdit();
+            toast.success('Update edited');
+        } catch (error) {
+            toast.error(error.response?.data?.detail || 'Failed to edit update');
+        } finally {
+            setIsSavingEdit(false);
+        }
+    };
+
+    const handleDelete = async (updateId) => {
+        if (typeof onDeleteUpdate !== 'function') {
+            toast.error('Delete action unavailable');
+            return;
+        }
+        if (!window.confirm('Delete this update?')) {
+            return;
+        }
+
+        setDeletingUpdateId(updateId);
+        try {
+            await onDeleteUpdate(updateId);
+            setUpdates(prev => prev.filter(update => update.id !== updateId));
+            toast.success('Update deleted');
+        } catch (error) {
+            toast.error(error.response?.data?.detail || 'Failed to delete update');
+        } finally {
+            setDeletingUpdateId(null);
         }
     };
 
@@ -95,8 +164,56 @@ const UpdateFeed = ({ updates: initialUpdates, showProjectLink = false }) => {
                                     {update.project_title} <ArrowRight className="w-3 h-3" />
                                 </Link>
                             )}
-                            
-                            <p className="text-text-primary mb-2">{update.content}</p>
+
+                            {editingUpdateId === update.id ? (
+                                <div className="mb-2 space-y-2">
+                                    <textarea
+                                        className="input-brutalist w-full min-h-[90px]"
+                                        value={editingContent}
+                                        onChange={(e) => setEditingContent(e.target.value)}
+                                    />
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            className="btn-primary-brutalist py-1 px-3 text-xs inline-flex items-center gap-1"
+                                            onClick={() => handleSaveEdit(update.id)}
+                                            disabled={isSavingEdit}
+                                        >
+                                            <Check className="w-3 h-3" /> {isSavingEdit ? 'Saving...' : 'Save'}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="btn-secondary-brutalist py-1 px-3 text-xs inline-flex items-center gap-1"
+                                            onClick={cancelEdit}
+                                            disabled={isSavingEdit}
+                                        >
+                                            <X className="w-3 h-3" /> Cancel
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <p className="text-text-primary mb-2">{update.content}</p>
+                            )}
+
+                            {canManageUpdates && editingUpdateId !== update.id && (
+                                <div className="flex items-center gap-2 mb-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => beginEdit(update)}
+                                        className="btn-secondary-brutalist py-1 px-3 text-xs inline-flex items-center gap-1"
+                                    >
+                                        <Edit2 className="w-3 h-3" /> Edit
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleDelete(update.id)}
+                                        disabled={deletingUpdateId === update.id}
+                                        className="bg-white text-black border-2 border-black py-1 px-3 text-xs font-bold uppercase tracking-wider inline-flex items-center gap-1 hover:bg-gray-100 disabled:opacity-50"
+                                    >
+                                        <Trash2 className="w-3 h-3" /> {deletingUpdateId === update.id ? 'Deleting...' : 'Delete'}
+                                    </button>
+                                </div>
+                            )}
                             
                             {/* Like Button */}
                             <button

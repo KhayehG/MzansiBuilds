@@ -2,8 +2,9 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
-import { Clock, Heart, MessageSquare, ArrowRight } from 'lucide-react';
+import { Clock, Heart, MessageSquare, ArrowRight, Flag } from 'lucide-react';
 import { toast } from 'sonner';
+import ReportModal from './ReportModal';
 
 import { API_URL } from '../lib/api';
 
@@ -12,6 +13,7 @@ const ProjectCard = ({ project, showFullDescription = false, onLikeToggle }) => 
     const [isLiked, setIsLiked] = useState(project.is_liked || false);
     const [likeCount, setLikeCount] = useState(project.like_count || 0);
     const [isLiking, setIsLiking] = useState(false);
+    const [reportOpen, setReportOpen] = useState(false);
 
     const getStageBadge = (stage) => {
         switch (stage) {
@@ -60,6 +62,14 @@ const ProjectCard = ({ project, showFullDescription = false, onLikeToggle }) => 
 
     return (
         <div className="card-brutalist p-6 animate-fade-in" data-testid={`project-card-${project.id}`}>
+            <ReportModal
+                isOpen={reportOpen}
+                onClose={() => setReportOpen(false)}
+                reportType="project"
+                reportedItemId={project.id}
+                reportedUserId={null}
+                contextLabel="this project"
+            />
             <div className="flex items-start justify-between gap-4 mb-4">
                 <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
@@ -131,6 +141,18 @@ const ProjectCard = ({ project, showFullDescription = false, onLikeToggle }) => 
                         <MessageSquare className="w-4 h-4" />
                         <span>{project.comment_count || 0}</span>
                     </Link>
+
+                    {/* Report */}
+                    {isAuthenticated && user?.id !== project.user_id && (
+                        <button
+                            type="button"
+                            onClick={(e) => { e.preventDefault(); setReportOpen(true); }}
+                            className="flex shrink-0 items-center gap-1 text-xs text-text-secondary hover:text-error transition-colors"
+                            title="Report this project"
+                        >
+                            <Flag className="w-3 h-3" />
+                        </button>
+                    )}
                 </div>
 
                 <Link 

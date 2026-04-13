@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
-import { Send, Heart, CornerDownRight } from 'lucide-react';
+import { Send, Heart, CornerDownRight, Flag } from 'lucide-react';
 import { toast } from 'sonner';
+import ReportModal from './ReportModal';
 
 import { API_URL } from '../lib/api';
 
@@ -12,6 +13,7 @@ const CommentSection = ({ projectId, comments: initialComments, onCommentAdded }
     const [replyingTo, setReplyingTo] = useState(null);
     const [replyDrafts, setReplyDrafts] = useState({});
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [reportModal, setReportModal] = useState({ open: false, commentId: null });
     const comments = initialComments || [];
 
     const formatDate = (dateString) => {
@@ -158,6 +160,16 @@ const CommentSection = ({ projectId, comments: initialComments, onCommentAdded }
                             Reply {comment.reply_count > 0 && `(${comment.reply_count})`}
                         </button>
                     )}
+
+                    {isAuthenticated && user?.username !== comment.username && (
+                        <button
+                            type="button"
+                            onClick={() => setReportModal({ open: true, commentId: comment.id })}
+                            className="flex items-center gap-1 text-xs text-text-secondary hover:text-error transition-colors"
+                        >
+                            <Flag className="w-3 h-3" /> Report
+                        </button>
+                    )}
                 </div>
 
                 {/* Reply Form */}
@@ -189,6 +201,14 @@ const CommentSection = ({ projectId, comments: initialComments, onCommentAdded }
 
     return (
         <div className="space-y-6" data-testid="comment-section">
+            <ReportModal
+                isOpen={reportModal.open}
+                onClose={() => setReportModal({ open: false, commentId: null })}
+                reportType="comment"
+                reportedItemId={reportModal.commentId}
+                reportedUserId={null}
+                contextLabel="this comment"
+            />
             <h3 className="font-heading font-bold text-xl uppercase tracking-tight">
                 Comments ({comments?.length || 0})
             </h3>

@@ -9,11 +9,14 @@ from ..utils.common import utc_now_iso
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
+# Auto-flag threshold: when this many distinct users report the same item it moves to under_review
+AUTO_FLAG_THRESHOLD = 5
+
 
 @router.post("")
 async def create_report(
     request: Request,
-    report_type: str = Query(..., regex="^(project|user|comment|system)$"),
+    report_type: str = Query(..., pattern="^(project|user|comment|system)$"),
     reason: str = Query(...),
     description: str = Query(""),
     reported_item_id: str | None = Query(None),
@@ -32,12 +35,21 @@ async def create_report(
     if report_type == "user" and reported_user_id == user_id:
         raise HTTPException(status_code=400, detail="Cannot report yourself")
 
-    # Check if already reported by this user
-    existing = await db.reports.find_one({
-        "reported_by_user_id": user_id,
-        "report_type": report_type,
-        "reported_item_id": reported_item_id or reported_user_id,
-    })
+    # Build correct duplicate-check query per type
+    if report_type == "user":
+        dup_query = {
+            "reported_by_user_id": user_id,
+            "report_type": "user",
+            "reported_user_id": reported_user_id,
+        }
+    else:
+        dup_query = {
+            "reported_by_user_id": user_id,
+            "report_type": report_type,
+            "reported_item_id": reported_item_id,
+        }
+
+    existing = await db.reports.find_one(dup_query)
     if existing and existing.get("status") in ("pending", "under_review"):
         raise HTTPException(status_code=400, detail="You have already reported this item")
 
@@ -56,6 +68,22 @@ async def create_report(
 
     result = await db.reports.insert_one(report)
     report["_id"] = str(result.inserted_id)
+
+    # Auto-flagging: if this item now has >= AUTO_FLAG_THRESHOLD distinct reporters, escalate all pending to under_review
+    if report_type == "user":
+        count_query = {"report_type": "user", "reported_user_id": reported_user_id}
+    elif report_type == "system":
+        count_query = {"report_type": "system"}
+    else:
+        count_query = {"report_type": report_type, "reported_item_id": reported_item_id}
+
+    distinct_reporters = await db.reports.distinct("reported_by_user_id", count_query)
+    if len(distinct_reporters) >= AUTO_FLAG_THRESHOLD:
+        await db.reports.update_many(
+            {**count_query, "status": "pending"},
+            {"$set": {"status": "under_review", "updated_at": utc_now_iso()}},
+        )
+
     return report
 
 
@@ -105,7 +133,7 @@ async def get_all_reports(
 async def update_report_status(
     request: Request,
     report_id: str,
-    status: str = Query(..., regex="^(pending|under_review|resolved|dismissed)$"),
+    status: str = Query(..., pattern="^(pending|under_review|resolved|dismissed)$"),
     admin_notes: str = Query(""),
 ):
     """Update report status and add admin notes (admin only)."""
