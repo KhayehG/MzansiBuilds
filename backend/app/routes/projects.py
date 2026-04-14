@@ -191,6 +191,9 @@ async def _require_project_owner(project_id: str, request: Request) -> tuple[dic
 @router.post("")
 async def create_project(project_data: ProjectCreate, request: Request):
     user = await get_current_user(request)
+    if user.get("role") == "admin":
+        raise HTTPException(status_code=403, detail="Admin accounts cannot create projects")
+
     sdlc_type = project_data.sdlc_type
     stage_flow = get_stage_flow(sdlc_type)
     current_stage = project_data.current_stage or from_legacy_stage(project_data.stage, sdlc_type)

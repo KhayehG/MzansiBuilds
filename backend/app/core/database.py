@@ -124,11 +124,20 @@ async def seed_admin_user() -> None:
 
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@example.com").lower()
     admin_password = os.environ.get("ADMIN_PASSWORD")
+    insecure_local_seed_allowed = os.environ.get("ALLOW_INSECURE_LOCAL_ADMIN_SEED", "true" if USE_MOCK_DB else "false").lower() == "true"
     if not admin_password:
         if IS_PRODUCTION:
             logger.warning("Skipping admin seeding in production because ADMIN_PASSWORD is not set.")
             return
+        if not USE_MOCK_DB or not insecure_local_seed_allowed:
+            logger.warning(
+                "Skipping admin seeding because ADMIN_PASSWORD is not set and insecure local admin seeding is disabled."
+            )
+            return
         admin_password = "admin123"
+        logger.warning(
+            "Using insecure local admin seed credentials because ADMIN_PASSWORD is not set. Set ADMIN_PASSWORD or disable ALLOW_INSECURE_LOCAL_ADMIN_SEED."
+        )
 
     existing = await db.users.find_one({"email": admin_email})
     if existing is not None:
@@ -149,6 +158,8 @@ async def seed_admin_user() -> None:
             "follower_count": 0,
             "following_count": 0,
             "role": "admin",
+            "is_suspended": False,
+            "suspension_reason": "",
             "created_at": utc_now_iso(),
         }
     )

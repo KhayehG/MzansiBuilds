@@ -16,7 +16,9 @@ import Profile from "./pages/Profile";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import Messages from "./pages/Messages";
+import AdminDashboard from "./pages/AdminDashboard";
 import AdminReports from "./pages/AdminReports";
+import AdminUsers from "./pages/AdminUsers";
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -37,6 +39,31 @@ const ProtectedRoute = ({ children }) => {
     return <Navigate to="/login" replace />;
   }
   
+  return children;
+};
+
+const NonAdminRoute = ({ children }) => {
+  const { isAuthenticated, loading, user } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center">
+          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-text-secondary font-mono">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (user?.role === 'admin') {
+    return <Navigate to="/admin" replace />;
+  }
+
   return children;
 };
 
@@ -95,9 +122,9 @@ function App() {
               
               {/* Protected Routes */}
               <Route path="/create" element={
-                <ProtectedRoute>
+                <NonAdminRoute>
                   <CreateProject />
-                </ProtectedRoute>
+                </NonAdminRoute>
               } />
               <Route path="/project/:projectId/edit" element={
                 <ProtectedRoute>
@@ -117,6 +144,16 @@ function App() {
               <Route path="/admin/reports" element={
                 <AdminRoute>
                   <AdminReports />
+                </AdminRoute>
+              } />
+              <Route path="/admin/users" element={
+                <AdminRoute>
+                  <AdminUsers />
+                </AdminRoute>
+              } />
+              <Route path="/admin" element={
+                <AdminRoute>
+                  <AdminDashboard />
                 </AdminRoute>
               } />
               

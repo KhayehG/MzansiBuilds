@@ -19,7 +19,7 @@ const Navbar = () => {
 
     const [reportSystemOpen, setReportSystemOpen] = useState(false);
 
-    const isActive = (path) => location.pathname === path;
+    const isActive = (path) => location.pathname === path || location.pathname.startsWith(`${path}/`);
 
     return (
         <header className="header-brutalist" data-testid="navbar">
@@ -70,16 +70,18 @@ const Navbar = () => {
 
                         {isAuthenticated ? (
                             <>
-                                <Link
-                                    to="/create"
-                                    className={`flex items-center gap-1 px-3 py-2 text-sm font-bold uppercase tracking-wider transition-colors ${
-                                        isActive('/create') ? 'text-primary border-b-2 border-primary' : 'hover:text-primary'
-                                    }`}
-                                    data-testid="nav-create"
-                                >
-                                    <PlusCircle className="w-4 h-4" strokeWidth={2.5} />
-                                    <span className="hidden sm:inline">Create</span>
-                                </Link>
+                                {user?.role !== 'admin' && (
+                                    <Link
+                                        to="/create"
+                                        className={`flex items-center gap-1 px-3 py-2 text-sm font-bold uppercase tracking-wider transition-colors ${
+                                            isActive('/create') ? 'text-primary border-b-2 border-primary' : 'hover:text-primary'
+                                        }`}
+                                        data-testid="nav-create"
+                                    >
+                                        <PlusCircle className="w-4 h-4" strokeWidth={2.5} />
+                                        <span className="hidden sm:inline">Create</span>
+                                    </Link>
+                                )}
 
                                 <Link
                                     to="/messages"
@@ -110,11 +112,11 @@ const Navbar = () => {
 
                                 {user?.role === 'admin' && (
                                     <Link
-                                        to="/admin/reports"
+                                        to="/admin"
                                         className={`flex items-center gap-1 px-3 py-2 text-sm font-bold uppercase tracking-wider transition-colors ${
-                                            isActive('/admin/reports') ? 'text-primary border-b-2 border-primary' : 'hover:text-primary'
+                                            isActive('/admin') ? 'text-primary border-b-2 border-primary' : 'hover:text-primary'
                                         }`}
-                                        data-testid="nav-admin-reports"
+                                        data-testid="nav-admin"
                                     >
                                         <Shield className="w-4 h-4" strokeWidth={2.5} />
                                         <span className="hidden sm:inline">Admin</span>

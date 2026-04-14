@@ -15,6 +15,13 @@ from ..utils.common import clean_text, utc_now_iso
 router = APIRouter(prefix="/users", tags=["users"])
 
 
+async def _require_admin(request: Request) -> dict:
+    user = await get_current_user(request)
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+
 @router.get("")
 async def list_users(
     q: str | None = None,
@@ -123,7 +130,8 @@ async def update_profile(profile_data: UserProfileUpdate, request: Request):
 
     if profile_data.username:
         username = profile_data.username.strip()
-        existing = await db.users.find_one({"username": username, "_id": {"$ne": ObjectId(user["_id"])}})
+        username_pattern = {"$regex": f"^{re.escape(username)}$", "$options": "i"}
+        existing = await db.users.find_one({"username": username_pattern, "_id": {"$ne": ObjectId(user["_id"])}})
         if existing:
             raise HTTPException(status_code=400, detail="Username already taken")
         update_data["username"] = username
@@ -295,3 +303,77 @@ async def get_following(user_id: str, request: Request, skip: int = 0, limit: in
         for follow in follows
         if follow["following_id"] in user_map
     ]
+
+
+@router.get("/admin/all")
+async def admin_list_users(
+    request: Request,
+    q: str | None = None,
+    suspended: bool | None = None,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+):
+    await _require_admin(request)
+
+    query: dict = {}
+    if q and q.strip():
+        pattern = {"$regex": re.escape(q.strip()), "$options": "i"}
+        query["$or"] = [
+            {"username": pattern},
+            {"email": pattern},
+            {"bio": pattern},
+        ]
+    if suspended is not None:
+        query["is_suspended"] = suspended
+
+    users = await db.users.find(query, {"password_hash": 0}).sort("created_at", -1).skip(offset).limit(limit).to_list(limit)
+    return {
+        "users": [
+            {
+                "id": str(user["_id"]),
+                "email": user["email"],
+                "username": user["username"],
+                "bio": user.get("bio", ""),
+                "profile_picture_url": user.get("profile_picture_url"),
+                "role": user.get("role", "user"),
+                "is_suspended": user.get("is_suspended", False),
+                "suspension_reason": user.get("suspension_reason", ""),
+                "created_at": user.get("created_at", ""),
+            }
+            for user in users
+        ]
+    }
+
+
+@router.put("/admin/{user_id}/suspension")
+async def admin_update_user_suspension(
+    user_id: str,
+    request: Request,
+    suspended: bool = Query(...),
+    reason: str = Query(""),
+):
+    admin_user = await _require_admin(request)
+    if admin_user["_id"] == user_id:
+        raise HTTPException(status_code=400, detail="Admin cannot suspend their own account")
+
+    oid = validate_object_id(user_id)
+    user = await db.users.find_one({"_id": oid})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    update_data = {
+        "is_suspended": suspended,
+        "suspension_reason": clean_text(reason) if suspended else "",
+        "updated_at": utc_now_iso(),
+    }
+    await db.users.update_one({"_id": oid}, {"$set": update_data})
+
+    updated = await db.users.find_one({"_id": oid}, {"password_hash": 0})
+    return {
+        "id": str(updated["_id"]),
+        "email": updated["email"],
+        "username": updated["username"],
+        "role": updated.get("role", "user"),
+        "is_suspended": updated.get("is_suspended", False),
+        "suspension_reason": updated.get("suspension_reason", ""),
+    }
