@@ -93,6 +93,31 @@ async def _get_project_for_read(
     return project, current_user
 
 
+async def _get_project_collaborators(project_id: str) -> list[dict]:
+    accepted_requests = await db.collaboration_requests.find(
+        {"project_id": project_id, "status": "accepted"}
+    ).sort("created_at", 1).to_list(200)
+    if not accepted_requests:
+        return []
+
+    collaborator_ids = [request["requester_id"] for request in accepted_requests]
+    users = await db.users.find(
+        {"_id": {"$in": [ObjectId(user_id_value) for user_id_value in collaborator_ids]}},
+        {"_id": 1, "username": 1, "profile_picture_url": 1},
+    ).to_list(500)
+    user_map = {str(user["_id"]): user for user in users}
+
+    return [
+        {
+            "id": request["requester_id"],
+            "username": user_map.get(request["requester_id"], {}).get("username", "Unknown"),
+            "profile_picture_url": user_map.get(request["requester_id"], {}).get("profile_picture_url"),
+            "joined_at": request.get("updated_at") or request.get("created_at", ""),
+        }
+        for request in accepted_requests
+    ]
+
+
 @router.post("")
 async def create_project(project_data: ProjectCreate, request: Request):
     user = await get_current_user(request)
@@ -269,6 +294,7 @@ async def get_projects(
 @router.get("/{project_id}")
 async def get_project(project_id: str, request: Request):
     project, current_user = await _get_project_for_read(project_id, request)
+    collaborators = await _get_project_collaborators(project_id)
 
     user = await db.users.find_one(
         {"_id": ObjectId(project["user_id"])},
@@ -302,6 +328,8 @@ async def get_project(project_id: str, request: Request):
         "profile_picture_url": user.get("profile_picture_url") if user else None,
         "like_count": project.get("like_count", 0),
         "comment_count": project.get("comment_count", 0),
+        "collaborators": collaborators,
+        "collaborator_count": len(collaborators),
         "is_liked": is_liked,
         "has_requested_collab": has_requested_collab,
         "collaboration_status": collaboration_status,
@@ -914,6 +942,8 @@ async def create_comment(project_id: str, comment_data: CommentCreate, request: 
             "type": "new_comment",
             "message": f"@{user['username']} commented on your project \"{project['title']}\"",
             "actor_id": user["_id"],
+            "reference_id": project_id,
+            "route": f"/project/{project_id}",
             "is_read": False,
             "created_at": utc_now_iso(),
         }
@@ -931,6 +961,8 @@ async def create_comment(project_id: str, comment_data: CommentCreate, request: 
                 "type": "comment_reply",
                 "message": f"@{user['username']} replied to your comment",
                 "actor_id": user["_id"],
+                "reference_id": project_id,
+                "route": f"/project/{project_id}",
                 "is_read": False,
                 "created_at": utc_now_iso(),
             }
@@ -1075,6 +1107,8 @@ async def create_collaboration_request(project_id: str, collab_data: Collaborati
         "type": "collaboration_request",
         "message": f"@{user['username']} wants to collaborate on \"{project['title']}\"",
         "actor_id": user["_id"],
+        "reference_id": project_id,
+        "route": f"/project/{project_id}",
         "is_read": False,
         "created_at": utc_now_iso(),
     }
@@ -1104,6 +1138,28 @@ async def create_collaboration_request(project_id: str, collab_data: Collaborati
         "message": collab_doc["message"],
         "status": "pending",
         "created_at": collab_doc["created_at"],
+    }
+
+
+@router.delete("/{project_id}/collaborate")
+async def delete_collaboration_request(project_id: str, request: Request):
+    user = await get_current_user(request)
+    project = await db.projects.find_one({"_id": validate_object_id(project_id)})
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    collab_request = await db.collaboration_requests.find_one(
+        {"project_id": project_id, "requester_id": user["_id"]}
+    )
+    if not collab_request:
+        raise HTTPException(status_code=404, detail="Collaboration request not found")
+
+    was_accepted = collab_request.get("status") == "accepted"
+    await db.collaboration_requests.delete_one({"_id": collab_request["_id"]})
+
+    return {
+        "message": "Left project successfully" if was_accepted else "Collaboration request revoked",
+        "state": "left" if was_accepted else "revoked",
     }
 
 

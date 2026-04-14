@@ -190,6 +190,8 @@ async def follow_user(user_id: str, request: Request):
         "type": "new_follow",
         "message": f"@{current_user['username']} started following you",
         "actor_id": current_user["_id"],
+        "reference_id": current_user["_id"],
+        "route": f"/profile/{current_user['_id']}",
         "is_read": False,
         "created_at": utc_now_iso(),
     }
@@ -264,7 +266,7 @@ async def get_followers(user_id: str, request: Request, skip: int = 0, limit: in
 
 
 @router.get("/{user_id}/following")
-async def get_following(user_id: str, skip: int = 0, limit: int = 20):
+async def get_following(user_id: str, request: Request, skip: int = 0, limit: int = 20):
     validate_object_id(user_id)
     follows = await db.follows.find({"follower_id": user_id}).skip(skip).limit(limit).to_list(limit)
     following_ids = [follow["following_id"] for follow in follows]
@@ -275,6 +277,12 @@ async def get_following(user_id: str, skip: int = 0, limit: int = 20):
     ).to_list(500)
     user_map = {str(user["_id"]): user for user in users}
 
+    current_user = await get_optional_user(request)
+    my_following_ids: set[str] = set()
+    if current_user:
+        my_follows = await db.follows.find({"follower_id": current_user["_id"]}).to_list(500)
+        my_following_ids = {f["following_id"] for f in my_follows}
+
     return [
         {
             "id": follow["following_id"],
@@ -282,6 +290,7 @@ async def get_following(user_id: str, skip: int = 0, limit: int = 20):
             "bio": user_map[follow["following_id"]].get("bio", ""),
             "profile_picture_url": user_map[follow["following_id"]].get("profile_picture_url"),
             "followed_at": follow.get("created_at", ""),
+            "is_following": follow["following_id"] in my_following_ids,
         }
         for follow in follows
         if follow["following_id"] in user_map

@@ -45,7 +45,7 @@ const ProjectDetail = () => {
     const fetchData = useCallback(async () => {
         try {
             const [projectRes, updatesRes, commentsRes, stagesRes, milestonesRes] = await Promise.all([
-                axios.get(`${API_URL}/api/projects/${projectId}`),
+                axios.get(`${API_URL}/api/projects/${projectId}`, { withCredentials: true }),
                 axios.get(`${API_URL}/api/projects/${projectId}/updates`),
                 axios.get(`${API_URL}/api/projects/${projectId}/comments`),
                 axios.get(`${API_URL}/api/projects/${projectId}/stages`),
@@ -238,6 +238,18 @@ const ProjectDetail = () => {
         }
     };
 
+    const handleCancelCollaboration = async () => {
+        try {
+            const response = await axios.delete(`${API_URL}/api/projects/${projectId}/collaborate`, { withCredentials: true });
+            toast.success(response.data?.message || 'Collaboration updated');
+            setShowCollabForm(false);
+            setCollabMessage('');
+            await fetchData();
+        } catch (error) {
+            toast.error(error.response?.data?.detail || 'Failed to update collaboration');
+        }
+    };
+
     const handleEditUpdate = async (updateId, content) => {
         const response = await axios.put(
             `${API_URL}/api/projects/${projectId}/updates/${updateId}`,
@@ -285,6 +297,7 @@ const ProjectDetail = () => {
 
     const isOwner = isAuthenticated && user?.id === project?.user_id;
     const collaborationStatus = project?.collaboration_status;
+    const collaborators = project?.collaborators || [];
     const hasActiveCollabRequest = collaborationStatus === 'pending' || collaborationStatus === 'accepted';
     const canRaiseHand = isAuthenticated && !isOwner && !hasActiveCollabRequest;
 
@@ -474,6 +487,23 @@ const ProjectDetail = () => {
                                     <span className="font-bold uppercase tracking-wide">Likes</span>
                                     <span>{project.like_count || 0}</span>
                                 </div>
+                                <div className="flex items-center justify-between gap-4 text-sm">
+                                    <span className="font-bold uppercase tracking-wide">Collaborators</span>
+                                    <span>{project.collaborator_count || 0}</span>
+                                </div>
+                                <div className="text-sm">
+                                    <div className="font-bold uppercase tracking-wide mb-2">Team</div>
+                                    <div className="text-text-secondary space-y-1">
+                                        <div>@{project.username} (Owner)</div>
+                                        {collaborators.length === 0 ? (
+                                            <div>No collaborators yet</div>
+                                        ) : (
+                                            collaborators.map((collaborator) => (
+                                                <div key={collaborator.id}>@{collaborator.username}</div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
                             </div>
 
                             {isOwner ? (
@@ -517,6 +547,23 @@ const ProjectDetail = () => {
                                                 {collaborationStatus === 'accepted' ? <CheckCircle className="w-4 h-4 text-green-600" /> : <AlertCircle className="w-4 h-4 text-amber-600" />}
                                                 <span className="font-medium">{String(collaborationStatus || 'pending').toUpperCase()}</span>
                                             </div>
+                                            {collaborationStatus === 'pending' && (
+                                                <div className="mt-3 flex gap-2">
+                                                    <button type="button" className="btn-primary-brutalist flex-1 opacity-70 cursor-not-allowed" disabled>
+                                                        Request Sent
+                                                    </button>
+                                                    <button type="button" onClick={handleCancelCollaboration} className="btn-secondary-brutalist">
+                                                        Revoke
+                                                    </button>
+                                                </div>
+                                            )}
+                                            {collaborationStatus === 'accepted' && (
+                                                <div className="mt-3">
+                                                    <button type="button" onClick={handleCancelCollaboration} className="btn-secondary-brutalist w-full">
+                                                        Leave Project
+                                                    </button>
+                                                </div>
+                                            )}
                                             {collaborationStatus === 'rejected' && (
                                                 <p className="mt-2 text-text-secondary">
                                                     This request was rejected. You can update your message and raise your hand again.

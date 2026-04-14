@@ -75,6 +75,8 @@ async def add_like(like_data: LikeCreate, request: Request):
             "type": "new_like",
             "message": f"@{user['username']} liked your {target_type}",
             "actor_id": user["_id"],
+            "reference_id": target_doc.get("project_id") or target_id,
+            "route": f"/project/{target_doc.get('project_id') or target_id}",
             "is_read": False,
             "created_at": utc_now_iso(),
         }

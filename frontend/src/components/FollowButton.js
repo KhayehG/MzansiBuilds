@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 
 import { API_URL } from '../lib/api';
 
-const FollowButton = ({ userId, initialIsFollowing = false, onFollowChange, size = 'default' }) => {
+const FollowButton = ({ userId, initialIsFollowing = false, inactiveLabel = 'Follow', onFollowChange, size = 'default' }) => {
     const { isAuthenticated, user } = useAuth();
     const [isFollowing, setIsFollowing] = useState(initialIsFollowing);
     const [isLoading, setIsLoading] = useState(false);
@@ -67,7 +67,7 @@ const FollowButton = ({ userId, initialIsFollowing = false, onFollowChange, size
             ) : (
                 <>
                     <UserPlus className="w-4 h-4" />
-                    Follow
+                    {inactiveLabel}
                 </>
             )}
         </button>

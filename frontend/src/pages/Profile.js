@@ -67,7 +67,7 @@ const Profile = () => {
 
     const fetchFollowers = useCallback(async () => {
         try {
-            const response = await axios.get(`${API_URL}/api/users/${targetUserId}/followers`);
+            const response = await axios.get(`${API_URL}/api/users/${targetUserId}/followers`, { withCredentials: true });
             setFollowers(response.data);
         } catch (error) {
             console.error('Error fetching followers:', error);
@@ -76,7 +76,7 @@ const Profile = () => {
 
     const fetchFollowing = useCallback(async () => {
         try {
-            const response = await axios.get(`${API_URL}/api/users/${targetUserId}/following`);
+            const response = await axios.get(`${API_URL}/api/users/${targetUserId}/following`, { withCredentials: true });
             setFollowing(response.data);
         } catch (error) {
             console.error('Error fetching following:', error);
@@ -552,7 +552,7 @@ const Profile = () => {
                                                     {follower.bio && <p className="text-sm text-text-secondary line-clamp-1">{follower.bio}</p>}
                                                 </div>
                                             </Link>
-                                            <FollowButton userId={follower.id} initialIsFollowing={follower.is_following} size="small" />
+                                            <FollowButton userId={follower.id} initialIsFollowing={follower.is_following} inactiveLabel={follower.is_following ? 'Follow' : 'Follow Back'} size="small" />
                                         </div>
                                     ))
                                 ) : (
@@ -583,7 +583,7 @@ const Profile = () => {
                                                     {user.bio && <p className="text-sm text-text-secondary line-clamp-1">{user.bio}</p>}
                                                 </div>
                                             </Link>
-                                            <FollowButton userId={user.id} initialIsFollowing={true} size="small" />
+                                            <FollowButton userId={user.id} initialIsFollowing={user.is_following ?? true} size="small" />
                                         </div>
                                     ))
                                 ) : (
