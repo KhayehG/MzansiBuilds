@@ -48,6 +48,7 @@ const EditProject = () => {
     const [sdlcType, setSdlcType] = useState('waterfall');
     const [currentStage, setCurrentStage] = useState('planning');
     const [supportNeeded, setSupportNeeded] = useState('');
+    const [techStackInput, setTechStackInput] = useState('');
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
 
@@ -69,6 +70,7 @@ const EditProject = () => {
                 setSdlcType(nextSdlcType);
                 setCurrentStage(project.current_stage || legacyToCurrentStage(project.stage, nextSdlcType));
                 setSupportNeeded(project.support_needed || '');
+                setTechStackInput((project.tech_stack || []).join(', '));
             } catch (error) {
                 toast.error('Project not found');
                 navigate('/');
@@ -91,7 +93,13 @@ const EditProject = () => {
         try {
             await axios.put(
                 `${API_URL}/api/projects/${projectId}`,
-                { title, description, current_stage: currentStage, support_needed: supportNeeded },
+                {
+                    title,
+                    description,
+                    current_stage: currentStage,
+                    support_needed: supportNeeded,
+                    tech_stack: techStackInput.split(',').map((value) => value.trim()).filter(Boolean),
+                },
                 { withCredentials: true }
             );
             toast.success('Project updated!');
@@ -238,6 +246,21 @@ const EditProject = () => {
                             className="input-brutalist w-full"
                             placeholder="e.g., Frontend developer, UX feedback"
                             data-testid="edit-support-input"
+                        />
+                    </div>
+
+                    <div className="card-brutalist p-6">
+                        <label className="text-xs uppercase tracking-widest font-bold mb-3 flex items-center gap-2">
+                            <Target className="w-4 h-4" />
+                            Tech Stack
+                        </label>
+                        <input
+                            type="text"
+                            value={techStackInput}
+                            onChange={(e) => setTechStackInput(e.target.value)}
+                            className="input-brutalist w-full"
+                            placeholder="React, FastAPI, MongoDB"
+                            data-testid="edit-tech-stack-input"
                         />
                     </div>
 

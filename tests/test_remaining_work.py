@@ -99,6 +99,96 @@ def test_project_search_filters_results_by_query():
         assert "Beta Community Hub" not in project_titles
 
 
+def test_project_filters_support_owner_tech_stack_and_liked_projects():
+    with TestClient(app) as client:
+        owner = _register_user(client, "filters")
+
+        python_response = client.post(
+            "/api/projects",
+            json={
+                "title": "FastAPI Builder",
+                "description": "Backend service for query filtering tests.",
+                "stage": "idea",
+                "support_needed": "Testing",
+                "tech_stack": ["FastAPI", "MongoDB"],
+            },
+        )
+        react_response = client.post(
+            "/api/projects",
+            json={
+                "title": "React Builder",
+                "description": "Frontend service for query filtering tests.",
+                "stage": "idea",
+                "support_needed": "Design",
+                "tech_stack": ["React", "Tailwind"],
+            },
+        )
+
+        assert python_response.status_code == 200
+        assert react_response.status_code == 200
+
+        tech_filter_response = client.get("/api/projects?tech_stack=FastAPI")
+        assert tech_filter_response.status_code == 200
+        tech_titles = [project["title"] for project in tech_filter_response.json()]
+        assert "FastAPI Builder" in tech_titles
+        assert "React Builder" not in tech_titles
+
+        owner_filter_response = client.get(f"/api/projects?owner_username={owner['username']}")
+        assert owner_filter_response.status_code == 200
+        owner_titles = [project["title"] for project in owner_filter_response.json()]
+        assert "FastAPI Builder" in owner_titles
+        assert "React Builder" in owner_titles
+
+        like_response = client.post(
+            "/api/like",
+            json={"project_id": python_response.json()["id"]},
+        )
+        assert like_response.status_code == 200
+
+        liked_response = client.get(f"/api/projects?liked_by={owner['id']}")
+        assert liked_response.status_code == 200
+        liked_titles = [project["title"] for project in liked_response.json()]
+        assert liked_titles == ["FastAPI Builder"]
+
+
+def test_feed_search_and_filters_are_applied_server_side():
+    with TestClient(app) as client:
+        owner = _register_user(client, "feedfilter")
+
+        alpha_response = client.post(
+            "/api/projects",
+            json={
+                "title": "Alpha Feed Search",
+                "description": "This project should match feed filters.",
+                "stage": "idea",
+                "support_needed": "QA",
+                "tech_stack": ["React"],
+            },
+        )
+        beta_response = client.post(
+            "/api/projects",
+            json={
+                "title": "Beta Feed Search",
+                "description": "This project should be filtered out.",
+                "stage": "idea",
+                "support_needed": "Docs",
+                "tech_stack": ["FastAPI"],
+            },
+        )
+        assert alpha_response.status_code == 200
+        assert beta_response.status_code == 200
+
+        search_response = client.get("/api/feed?q=alpha")
+        assert search_response.status_code == 200
+        assert all("alpha" in (item.get("title", "") + item.get("project_title", "")).lower() for item in search_response.json())
+
+        tech_response = client.get("/api/feed?tech_stack=React")
+        assert tech_response.status_code == 200
+        project_items = [item for item in tech_response.json() if item["type"] == "project"]
+        assert any(item["title"] == "Alpha Feed Search" for item in project_items)
+        assert all("React" in item.get("tech_stack", []) for item in project_items)
+
+
 def test_user_directory_search_returns_public_results():
     with TestClient(app) as client:
         owner = _register_user(client, "directory")

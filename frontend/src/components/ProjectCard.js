@@ -93,6 +93,14 @@ const ProjectCard = ({ project, showFullDescription = false, onLikeToggle }) => 
                 {project.description}
             </p>
 
+            {project.tech_stack?.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-4">
+                    {project.tech_stack.map((item) => (
+                        <span key={item} className="badge-idea">{item}</span>
+                    ))}
+                </div>
+            )}
+
             {project.support_needed && (
                 <div className="bg-surface border-2 border-black p-3 mb-4">
                     <p className="text-xs uppercase tracking-widest font-bold text-text-secondary mb-1">Looking for</p>

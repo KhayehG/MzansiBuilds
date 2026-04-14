@@ -16,6 +16,7 @@ const Profile = () => {
     const { user: currentUser, isAuthenticated } = useAuth();
     const [profile, setProfile] = useState(null);
     const [projects, setProjects] = useState([]);
+    const [likedProjects, setLikedProjects] = useState([]);
     const [followers, setFollowers] = useState([]);
     const [following, setFollowing] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -83,6 +84,15 @@ const Profile = () => {
         }
     }, [targetUserId]);
 
+    const fetchLikedProjects = useCallback(async () => {
+        try {
+            const response = await axios.get(`${API_URL}/api/projects?liked_by=${targetUserId}`, { withCredentials: true });
+            setLikedProjects(response.data);
+        } catch (error) {
+            console.error('Error fetching liked projects:', error);
+        }
+    }, [targetUserId]);
+
     useEffect(() => {
         fetchProfile();
     }, [fetchProfile]);
@@ -90,7 +100,8 @@ const Profile = () => {
     useEffect(() => {
         if (activeTab === 'followers') fetchFollowers();
         if (activeTab === 'following') fetchFollowing();
-    }, [activeTab, fetchFollowers, fetchFollowing]);
+        if (activeTab === 'liked') fetchLikedProjects();
+    }, [activeTab, fetchFollowers, fetchFollowing, fetchLikedProjects]);
 
     const handleSaveProfile = async () => {
         setIsSaving(true);
@@ -484,6 +495,14 @@ const Profile = () => {
                                 Projects ({projects.length})
                             </button>
                             <button
+                                onClick={() => setActiveTab('liked')}
+                                className={`flex-1 py-3 text-sm font-bold uppercase tracking-wider transition-colors ${
+                                    activeTab === 'liked' ? 'bg-black text-white' : 'bg-white hover:bg-gray-50'
+                                }`}
+                            >
+                                Liked ({likedProjects.length})
+                            </button>
+                            <button
                                 onClick={() => setActiveTab('followers')}
                                 className={`flex-1 py-3 text-sm font-bold uppercase tracking-wider transition-colors ${
                                     activeTab === 'followers' ? 'bg-black text-white' : 'bg-white hover:bg-gray-50'
@@ -531,6 +550,21 @@ const Profile = () => {
                                     </div>
                                 )}
                             </>
+                        )}
+
+                        {activeTab === 'liked' && (
+                            likedProjects.length > 0 ? (
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" data-testid="profile-liked-projects">
+                                    {likedProjects.map((project) => (
+                                        <ProjectCard key={project.id} project={project} />
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="card-brutalist p-12 text-center">
+                                    <Rocket className="w-12 h-12 mx-auto text-gray-400 mb-4" />
+                                    <p className="text-text-secondary text-lg">No liked projects yet</p>
+                                </div>
+                            )
                         )}
 
                         {/* Followers Tab */}

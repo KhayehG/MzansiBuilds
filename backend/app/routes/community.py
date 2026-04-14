@@ -15,6 +15,14 @@ from ..utils.common import utc_now_iso
 router = APIRouter(tags=["community"])
 
 
+def _merge_user_filter(existing_filter: str | dict | None, allowed_user_ids: list[str]) -> str | dict:
+    if isinstance(existing_filter, str):
+        return existing_filter if existing_filter in allowed_user_ids else {"$in": []}
+    if isinstance(existing_filter, dict) and "$in" in existing_filter:
+        return {"$in": [user_id for user_id in existing_filter["$in"] if user_id in allowed_user_ids]}
+    return {"$in": allowed_user_ids}
+
+
 @router.post("/like")
 async def add_like(like_data: LikeCreate, request: Request):
     user = await get_current_user(request)
@@ -130,7 +138,15 @@ async def remove_like(like_data: LikeCreate, request: Request):
 
 
 @router.get("/feed")
-async def get_feed(request: Request, mode: Literal["global", "following"] = Query("global")):
+async def get_feed(
+    request: Request,
+    mode: Literal["global", "following"] = Query("global"),
+    q: str | None = None,
+    sdlc_type: str | None = None,
+    current_stage: str | None = None,
+    tech_stack: str | None = None,
+    owner_username: str | None = None,
+):
     current_user = await get_optional_user(request)
     following_ids: list[str] = []
     if mode == "following" and current_user:
@@ -139,12 +155,46 @@ async def get_feed(request: Request, mode: Literal["global", "following"] = Quer
         if not following_ids:
             return []
 
-    project_query = {"hidden": {"$ne": True}}
+    project_query: dict = {"hidden": {"$ne": True}}
     if mode == "following":
         project_query["user_id"] = {"$in": following_ids}
-    update_query = {"user_id": {"$in": following_ids}} if mode == "following" else {}
-    projects = await db.projects.find(project_query).sort("created_at", -1).to_list(20)
-    updates = await db.updates.find(update_query).sort("created_at", -1).to_list(20)
+    if sdlc_type:
+        project_query["sdlc_type"] = sdlc_type
+    if current_stage:
+        project_query["current_stage"] = current_stage
+    if tech_stack and tech_stack.strip():
+        project_query["tech_stack"] = {"$elemMatch": {"$regex": tech_stack.strip(), "$options": "i"}}
+    if owner_username and owner_username.strip():
+        owner_matches = await db.users.find(
+            {"username": {"$regex": owner_username.strip(), "$options": "i"}},
+            {"_id": 1},
+        ).to_list(200)
+        owner_ids = [str(user["_id"]) for user in owner_matches]
+        project_query["user_id"] = _merge_user_filter(project_query.get("user_id"), owner_ids)
+
+    if q and q.strip():
+        pattern = {"$regex": q.strip(), "$options": "i"}
+        matching_users = await db.users.find({"username": pattern}, {"_id": 1}).to_list(200)
+        project_query["$or"] = [
+            {"title": pattern},
+            {"description": pattern},
+            {"support_needed": pattern},
+            {"tech_stack": {"$elemMatch": pattern}},
+            {"user_id": {"$in": [str(user["_id"]) for user in matching_users]}} if matching_users else {"title": pattern},
+        ]
+
+    projects = await db.projects.find(project_query).sort("created_at", -1).to_list(40)
+    visible_project_ids = [str(project["_id"]) for project in projects]
+
+    update_query: dict = {"project_id": {"$in": visible_project_ids}}
+    if mode == "following":
+        update_query["user_id"] = {"$in": following_ids}
+    if q and q.strip():
+        update_query["$or"] = [
+            {"content": {"$regex": q.strip(), "$options": "i"}},
+            {"project_id": {"$in": visible_project_ids}},
+        ]
+    updates = await db.updates.find(update_query).sort("created_at", -1).to_list(40)
 
     user_ids = {project["user_id"] for project in projects} | {update["user_id"] for update in updates}
     project_ids = {update["project_id"] for update in updates}
@@ -181,6 +231,7 @@ async def get_feed(request: Request, mode: Literal["global", "following"] = Quer
                 "title": project["title"],
                 "description": project["description"],
                 "stage": project["stage"],
+                "tech_stack": project.get("tech_stack", []),
                 "support_needed": project.get("support_needed", ""),
                 "username": project_user.get("username", "Unknown"),
                 "profile_picture_url": project_user.get("profile_picture_url"),
