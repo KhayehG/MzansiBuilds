@@ -69,6 +69,30 @@ def from_legacy_stage(stage: str, sdlc_type: str) -> str:
     }.get(stage, "planning")
 
 
+def _can_view_hidden_project(project: dict, current_user: dict | None) -> bool:
+    if not project.get("hidden"):
+        return True
+
+    return bool(
+        current_user
+        and (current_user.get("role") == "admin" or current_user.get("_id") == project.get("user_id"))
+    )
+
+
+async def _get_project_for_read(
+    project_id: str,
+    request: Request,
+    *,
+    require_auth: bool = False,
+) -> tuple[dict, dict | None]:
+    current_user = await get_current_user(request) if require_auth else await get_optional_user(request)
+    project = await db.projects.find_one({"_id": validate_object_id(project_id)})
+    if not project or not _can_view_hidden_project(project, current_user):
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    return project, current_user
+
+
 @router.post("")
 async def create_project(project_data: ProjectCreate, request: Request):
     user = await get_current_user(request)
@@ -244,15 +268,12 @@ async def get_projects(
 
 @router.get("/{project_id}")
 async def get_project(project_id: str, request: Request):
-    project = await db.projects.find_one({"_id": validate_object_id(project_id)})
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project, current_user = await _get_project_for_read(project_id, request)
 
     user = await db.users.find_one(
         {"_id": ObjectId(project["user_id"])},
         {"_id": 0, "username": 1, "bio": 1, "profile_picture_url": 1},
     )
-    current_user = await get_optional_user(request)
     is_liked = False
     has_requested_collab = False
     collaboration_status = None
@@ -329,10 +350,7 @@ async def update_project(project_id: str, project_data: ProjectUpdate, request: 
 
 @router.get("/{project_id}/stages")
 async def get_stage_progress(project_id: str, request: Request):
-    await get_optional_user(request)
-    project = await db.projects.find_one({"_id": validate_object_id(project_id)})
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project, _ = await _get_project_for_read(project_id, request)
 
     stage_flow = get_stage_flow(project.get("sdlc_type", "waterfall"))
     rows = await db.stage_progress.find({"project_id": project_id}).to_list(200)
@@ -355,10 +373,7 @@ async def get_stage_progress(project_id: str, request: Request):
 
 @router.get("/{project_id}/stage-history")
 async def get_stage_history(project_id: str, request: Request):
-    await get_current_user(request)
-    project = await db.projects.find_one({"_id": validate_object_id(project_id)})
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project, _ = await _get_project_for_read(project_id, request, require_auth=True)
 
     history = await db.stage_history.find({"project_id": project_id}).sort("changed_at", -1).to_list(500)
     return [
@@ -579,10 +594,7 @@ async def create_milestone(project_id: str, milestone_data: MilestoneCreate, req
 
 @router.get("/{project_id}/milestones")
 async def get_milestones(project_id: str, request: Request, stage_name: str | None = None):
-    await get_optional_user(request)
-    project = await db.projects.find_one({"_id": validate_object_id(project_id)})
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project, _ = await _get_project_for_read(project_id, request)
 
     query: dict = {"project_id": project_id}
     if stage_name:
@@ -687,15 +699,13 @@ async def delete_milestone(project_id: str, milestone_id: str, request: Request)
 
 @router.delete("/{project_id}")
 async def delete_project(project_id: str, request: Request):
-    user = await get_current_user(request)
-    oid = validate_object_id(project_id)
-    project = await db.projects.find_one({"_id": oid})
+    project, current_user = await _get_project_for_read(project_id, request, require_auth=True)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    if project["user_id"] != user["_id"]:
+    if project["user_id"] != current_user["_id"]:
         raise HTTPException(status_code=403, detail="Not authorized to delete this project")
 
-    await db.projects.delete_one({"_id": oid})
+    await db.projects.delete_one({"_id": project["_id"]})
     await db.updates.delete_many({"project_id": project_id})
     await db.comments.delete_many({"project_id": project_id})
     await db.collaboration_requests.delete_many({"project_id": project_id})
@@ -826,6 +836,7 @@ async def delete_update(project_id: str, update_id: str, request: Request):
 
 @router.get("/{project_id}/updates")
 async def get_updates(project_id: str, request: Request):
+    _, current_user = await _get_project_for_read(project_id, request)
     updates = await db.updates.find({"project_id": project_id}).sort("created_at", -1).to_list(100)
     user_ids = list({update["user_id"] for update in updates})
     users = await db.users.find(
@@ -834,7 +845,6 @@ async def get_updates(project_id: str, request: Request):
     ).to_list(500)
     user_map = {str(user["_id"]): user for user in users}
 
-    current_user = await get_optional_user(request)
     liked_update_ids: set[str] = set()
     if current_user:
         likes = await db.likes.find({"user_id": current_user["_id"], "update_id": {"$ne": None}}).to_list(500)
@@ -959,9 +969,14 @@ async def create_comment(project_id: str, comment_data: CommentCreate, request: 
 
 @router.get("/{project_id}/comments")
 async def get_comments(project_id: str, request: Request):
-    comments = await db.comments.find({"project_id": project_id, "parent_id": None}).sort("created_at", -1).to_list(100)
+    _, current_user = await _get_project_for_read(project_id, request)
+    comments = await db.comments.find(
+        {"project_id": project_id, "parent_id": None, "hidden": {"$ne": True}}
+    ).sort("created_at", -1).to_list(100)
     comment_ids = [str(comment["_id"]) for comment in comments]
-    replies = await db.comments.find({"project_id": project_id, "parent_id": {"$in": comment_ids}}).sort("created_at", 1).to_list(500)
+    replies = await db.comments.find(
+        {"project_id": project_id, "parent_id": {"$in": comment_ids}, "hidden": {"$ne": True}}
+    ).sort("created_at", 1).to_list(500)
 
     reply_map: dict[str, list] = {}
     for reply in replies:
@@ -974,7 +989,6 @@ async def get_comments(project_id: str, request: Request):
     ).to_list(500)
     user_map = {str(user["_id"]): user for user in users}
 
-    current_user = await get_optional_user(request)
     liked_comment_ids: set[str] = set()
     if current_user:
         likes = await db.likes.find({"user_id": current_user["_id"], "comment_id": {"$ne": None}}).to_list(500)
