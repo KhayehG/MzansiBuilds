@@ -5,7 +5,7 @@ import { useWebSocket } from '../contexts/WebSocketContext';
 import { useAuth } from '../contexts/AuthContext';
 import Navbar from '../components/Navbar';
 import ProjectCard from '../components/ProjectCard';
-import { Rocket, Filter, RefreshCw, Zap, Search, Users } from 'lucide-react';
+import { Rocket, Filter, RefreshCw, Zap, Search, Users, Heart, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { API_URL } from '../lib/api';
@@ -16,6 +16,8 @@ const Dashboard = () => {
     const [loading, setLoading] = useState(true);
     const [sdlcFilter, setSdlcFilter] = useState('all');
     const [stageFilter, setStageFilter] = useState('all');
+    const [techFilter, setTechFilter] = useState('all');
+    const [ownerFilter, setOwnerFilter] = useState('');
     const [viewMode, setViewMode] = useState('feed'); // feed, projects
     const [feedMode, setFeedMode] = useState('global'); // global, following
     const [searchTerm, setSearchTerm] = useState('');
@@ -54,9 +56,22 @@ const Dashboard = () => {
             if (searchTerm.trim()) {
                 projectParams.set('q', searchTerm.trim());
             }
+            if (techFilter !== 'all') {
+                projectParams.set('tech_stack', techFilter);
+            }
+            if (ownerFilter.trim()) {
+                projectParams.set('owner_username', ownerFilter.trim());
+            }
+
+            const feedParams = new URLSearchParams({ mode: feedMode });
+            if (sdlcFilter !== 'all') feedParams.set('sdlc_type', sdlcFilter);
+            if (stageFilter !== 'all') feedParams.set('current_stage', stageFilter);
+            if (searchTerm.trim()) feedParams.set('q', searchTerm.trim());
+            if (techFilter !== 'all') feedParams.set('tech_stack', techFilter);
+            if (ownerFilter.trim()) feedParams.set('owner_username', ownerFilter.trim());
 
             const requests = [
-                axios.get(`${API_URL}/api/feed?mode=${feedMode}`, { withCredentials: true }),
+                axios.get(`${API_URL}/api/feed?${feedParams.toString()}`, { withCredentials: true }),
                 axios.get(`${API_URL}/api/projects${projectParams.toString() ? `?${projectParams.toString()}` : ''}`, { withCredentials: true }),
             ];
 
@@ -76,7 +91,7 @@ const Dashboard = () => {
         } finally {
             setLoading(false);
         }
-    }, [sdlcFilter, stageFilter, feedMode, searchTerm]);
+    }, [sdlcFilter, stageFilter, techFilter, ownerFilter, feedMode, searchTerm]);
 
     useEffect(() => {
         fetchData();
@@ -102,22 +117,8 @@ const Dashboard = () => {
         return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
     };
 
-    const normalizedSearch = searchTerm.trim().toLowerCase();
-
     const filteredProjects = projects;
-
-    const filteredFeed = normalizedSearch
-        ? feed.filter((item) => {
-            const searchableText = [
-                item.title,
-                item.description,
-                item.content,
-                item.project_title,
-                item.username,
-            ].filter(Boolean).join(' ').toLowerCase();
-            return searchableText.includes(normalizedSearch);
-        })
-        : feed;
+    const filteredFeed = feed;
 
     return (
         <div className="min-h-screen bg-background">
@@ -226,6 +227,30 @@ const Dashboard = () => {
                         </select>
                     </div>
 
+                    <div className="flex items-center gap-2">
+                        <Filter className="w-4 h-4 text-text-secondary" />
+                        <input
+                            type="text"
+                            value={ownerFilter}
+                            onChange={(e) => setOwnerFilter(e.target.value)}
+                            className="input-brutalist py-2 text-sm"
+                            placeholder="Filter by owner"
+                            data-testid="filter-owner"
+                        />
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        <Filter className="w-4 h-4 text-text-secondary" />
+                        <input
+                            type="text"
+                            value={techFilter === 'all' ? '' : techFilter}
+                            onChange={(e) => setTechFilter(e.target.value.trim() ? e.target.value : 'all')}
+                            className="input-brutalist py-2 text-sm"
+                            placeholder="Filter by tech"
+                            data-testid="filter-tech"
+                        />
+                    </div>
+
                     {/* Stage Filter */}
                     <div className="flex items-center gap-2">
                         <Filter className="w-4 h-4 text-text-secondary" />
@@ -318,35 +343,17 @@ const Dashboard = () => {
                     </div>
                 ) : (
                     /* Feed View */
-                    <div className="space-y-0 border-2 border-black" data-testid="feed-list">
+                    <div className="max-w-3xl mx-auto space-y-6" data-testid="feed-list">
                         {filteredFeed.length > 0 ? (
                             filteredFeed.map((item, index) => (
                                 <div 
                                     key={`${item.type}-${item.id}`} 
-                                    className="feed-item animate-fade-in"
+                                    className={`${item.type === 'project' ? 'animate-fade-in' : 'card-brutalist p-6 animate-fade-in'}`}
                                     style={{ animationDelay: `${index * 0.03}s` }}
                                     data-testid={`feed-item-${item.id}`}
                                 >
                                     {item.type === 'project' ? (
-                                        <div>
-                                            <div className="flex items-center gap-2 mb-2">
-                                                <span className={`text-xs px-2 py-1 uppercase tracking-widest font-bold border border-black ${
-                                                    item.stage === 'completed' ? 'bg-primary text-white' :
-                                                    item.stage === 'in_progress' ? 'bg-yellow-400 text-black' :
-                                                    'bg-gray-200 text-black'
-                                                }`}>
-                                                    {item.stage === 'in_progress' ? 'BUILDING' : item.stage?.toUpperCase()}
-                                                </span>
-                                                <span className="text-xs text-text-secondary font-mono">
-                                                    {formatDate(item.created_at)}
-                                                </span>
-                                            </div>
-                                            <a href={`/project/${item.id}`} className="font-heading font-bold text-xl hover:text-primary transition-colors">
-                                                {item.title}
-                                            </a>
-                                            <p className="text-text-secondary mt-2 line-clamp-2">{item.description}</p>
-                                            <p className="text-sm font-bold mt-3">@{item.username}</p>
-                                        </div>
+                                        <ProjectCard project={item} />
                                     ) : (
                                         <div>
                                             <div className="flex items-center gap-2 mb-2">
@@ -357,11 +364,18 @@ const Dashboard = () => {
                                                     {formatDate(item.created_at)}
                                                 </span>
                                             </div>
-                                            <a href={`/project/${item.project_id}`} className="text-xs uppercase tracking-widest text-primary font-bold hover:underline">
+                                            <Link to={`/project/${item.project_id}`} className="text-xs uppercase tracking-widest text-primary font-bold hover:underline inline-flex items-center gap-1">
                                                 {item.project_title}
-                                            </a>
-                                            <p className="text-text-primary mt-2">{item.content}</p>
-                                            <p className="text-sm font-bold mt-3">@{item.username}</p>
+                                                <ArrowRight className="w-3 h-3" />
+                                            </Link>
+                                            <p className="text-text-primary mt-3">{item.content}</p>
+                                            <div className="flex items-center justify-between mt-4 pt-4 border-t-2 border-gray-200">
+                                                <p className="text-sm font-bold">@{item.username}</p>
+                                                <div className="flex items-center gap-1 text-sm text-text-secondary">
+                                                    <Heart className={`w-4 h-4 ${item.is_liked ? 'fill-current text-red-500' : ''}`} />
+                                                    <span>{item.like_count || 0}</span>
+                                                </div>
+                                            </div>
                                         </div>
                                     )}
                                 </div>

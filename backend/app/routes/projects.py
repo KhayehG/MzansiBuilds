@@ -23,6 +23,26 @@ from ..utils.common import clean_text, utc_now_iso
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
+
+def _normalize_tech_stack(values: list[str] | None) -> list[str]:
+    if not values:
+        return []
+
+    normalized: list[str] = []
+    for value in values:
+        cleaned = clean_text(value)
+        if cleaned and cleaned not in normalized:
+            normalized.append(cleaned)
+    return normalized[:20]
+
+
+def _merge_user_filter(existing_filter: str | dict | None, allowed_user_ids: list[str]) -> str | dict:
+    if isinstance(existing_filter, str):
+        return existing_filter if existing_filter in allowed_user_ids else {"$in": []}
+    if isinstance(existing_filter, dict) and "$in" in existing_filter:
+        return {"$in": [user_id for user_id in existing_filter["$in"] if user_id in allowed_user_ids]}
+    return {"$in": allowed_user_ids}
+
 WATERFALL_STAGES = [
     "planning",
     "requirements",
@@ -185,6 +205,7 @@ async def create_project(project_data: ProjectCreate, request: Request):
         "title": project_data.title,
         "description": project_data.description,
         "stage": legacy_stage,
+        "tech_stack": _normalize_tech_stack(project_data.tech_stack),
         "sdlc_type": sdlc_type,
         "current_stage": current_stage,
         "project_origin_stage": current_stage,
@@ -244,6 +265,7 @@ async def create_project(project_data: ProjectCreate, request: Request):
                 "title": project_data.title,
                 "description": project_data.description,
                 "stage": legacy_stage,
+                "tech_stack": _normalize_tech_stack(project_data.tech_stack),
                 "sdlc_type": sdlc_type,
                 "current_stage": current_stage,
                 "support_needed": clean_text(project_data.support_needed),
@@ -260,6 +282,7 @@ async def create_project(project_data: ProjectCreate, request: Request):
         "title": project_data.title,
         "description": project_data.description,
         "stage": legacy_stage,
+        "tech_stack": _normalize_tech_stack(project_data.tech_stack),
         "sdlc_type": sdlc_type,
         "current_stage": current_stage,
         "support_needed": clean_text(project_data.support_needed),
@@ -275,6 +298,9 @@ async def get_projects(
     sdlc_type: str | None = None,
     current_stage: str | None = None,
     user_id: str | None = None,
+    owner_username: str | None = None,
+    tech_stack: str | None = None,
+    liked_by: str | None = None,
     q: str | None = None,
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
@@ -289,7 +315,20 @@ async def get_projects(
         query["current_stage"] = current_stage
     if user_id:
         query["user_id"] = user_id
+    if liked_by:
+        liked_project_rows = await db.likes.find({"user_id": liked_by, "project_id": {"$ne": None}}).to_list(2000)
+        liked_project_ids = [validate_object_id(row["project_id"]) for row in liked_project_rows]
+        query["_id"] = {"$in": liked_project_ids} if liked_project_ids else {"$in": []}
     query["hidden"] = {"$ne": True}  # Exclude hidden projects
+
+    if owner_username and owner_username.strip():
+        owner_pattern = {"$regex": re.escape(owner_username.strip()), "$options": "i"}
+        owner_matches = await db.users.find({"username": owner_pattern}, {"_id": 1}).to_list(200)
+        owner_ids = [str(user["_id"]) for user in owner_matches]
+        query["user_id"] = _merge_user_filter(query.get("user_id"), owner_ids)
+
+    if tech_stack and tech_stack.strip():
+        query["tech_stack"] = {"$elemMatch": {"$regex": re.escape(tech_stack.strip()), "$options": "i"}}
     
     if q and q.strip():
         pattern = {"$regex": re.escape(q.strip()), "$options": "i"}
@@ -298,6 +337,7 @@ async def get_projects(
             {"title": pattern},
             {"description": pattern},
             {"support_needed": pattern},
+            {"tech_stack": {"$elemMatch": pattern}},
         ]
         if matching_users:
             search_filters.append({"user_id": {"$in": [str(user["_id"]) for user in matching_users]}})
@@ -326,6 +366,7 @@ async def get_projects(
                 "title": project["title"],
                 "description": project["description"],
                 "stage": project["stage"],
+                "tech_stack": project.get("tech_stack", []),
                 "sdlc_type": project.get("sdlc_type", "waterfall"),
                 "current_stage": project.get("current_stage", from_legacy_stage(project["stage"], project.get("sdlc_type", "waterfall"))),
                 "support_needed": project.get("support_needed", ""),
@@ -367,6 +408,7 @@ async def get_project(project_id: str, request: Request):
         "title": project["title"],
         "description": project["description"],
         "stage": project["stage"],
+        "tech_stack": project.get("tech_stack", []),
         "sdlc_type": project.get("sdlc_type", "waterfall"),
         "current_stage": project.get("current_stage", from_legacy_stage(project["stage"], project.get("sdlc_type", "waterfall"))),
         "support_needed": project.get("support_needed", ""),
@@ -402,6 +444,8 @@ async def update_project(project_id: str, project_data: ProjectUpdate, request: 
         sdlc_type = project.get("sdlc_type", "waterfall")
         if "current_stage" not in update_data:
             update_data["current_stage"] = from_legacy_stage(update_data["stage"], sdlc_type)
+    if "tech_stack" in update_data:
+        update_data["tech_stack"] = _normalize_tech_stack(update_data["tech_stack"])
     if update_data:
         update_data["updated_at"] = utc_now_iso()
         await db.projects.update_one({"_id": oid}, {"$set": update_data})
@@ -412,6 +456,7 @@ async def update_project(project_id: str, project_data: ProjectUpdate, request: 
         "title": updated["title"],
         "description": updated["description"],
         "stage": updated["stage"],
+        "tech_stack": updated.get("tech_stack", []),
         "sdlc_type": updated.get("sdlc_type", "waterfall"),
         "current_stage": updated.get("current_stage", from_legacy_stage(updated["stage"], updated.get("sdlc_type", "waterfall"))),
         "support_needed": updated.get("support_needed", ""),

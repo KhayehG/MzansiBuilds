@@ -33,6 +33,7 @@ const CreateProject = () => {
     const [sdlcType, setSdlcType] = useState('waterfall');
     const [currentStage, setCurrentStage] = useState('planning');
     const [supportNeeded, setSupportNeeded] = useState('');
+    const [techStackInput, setTechStackInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const { isAuthenticated } = useAuth();
     const navigate = useNavigate();
@@ -56,6 +57,7 @@ const CreateProject = () => {
                     sdlc_type: sdlcType,
                     current_stage: currentStage,
                     support_needed: supportNeeded,
+                    tech_stack: techStackInput.split(',').map((value) => value.trim()).filter(Boolean),
                 },
                 { withCredentials: true }
             );
@@ -191,6 +193,21 @@ const CreateProject = () => {
                             className="input-brutalist w-full"
                             placeholder="e.g., Frontend developer, UX feedback, Beta testers"
                             data-testid="create-support-input"
+                        />
+                    </div>
+
+                    <div className="card-brutalist p-6">
+                        <label className="text-xs uppercase tracking-widest font-bold mb-3 flex items-center gap-2">
+                            <Target className="w-4 h-4" />
+                            Tech Stack <span className="text-text-secondary font-normal">(comma separated)</span>
+                        </label>
+                        <input
+                            type="text"
+                            value={techStackInput}
+                            onChange={(e) => setTechStackInput(e.target.value)}
+                            className="input-brutalist w-full"
+                            placeholder="React, FastAPI, MongoDB"
+                            data-testid="create-tech-stack-input"
                         />
                     </div>
 

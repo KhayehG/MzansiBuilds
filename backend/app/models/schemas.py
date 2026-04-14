@@ -75,6 +75,7 @@ class ProjectCreate(StrictBaseModel):
     description: str = Field(min_length=10, max_length=5000)
     stage: ProjectStage = "idea"
     support_needed: Optional[str] = Field(default="", max_length=500)
+    tech_stack: List[str] = Field(default_factory=list, max_length=20)
     sdlc_type: SdlcType = "waterfall"
     current_stage: Optional[SdlcStage] = None
 
@@ -84,6 +85,7 @@ class ProjectUpdate(StrictBaseModel):
     description: Optional[str] = Field(default=None, min_length=10, max_length=5000)
     stage: Optional[ProjectStage] = None
     support_needed: Optional[str] = Field(default=None, max_length=500)
+    tech_stack: Optional[List[str]] = Field(default=None, max_length=20)
     current_stage: Optional[SdlcStage] = None
 
 
