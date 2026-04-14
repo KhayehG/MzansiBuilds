@@ -336,3 +336,52 @@ def test_rejected_collaboration_request_can_be_resubmitted():
         assert retry_response.status_code == 200
         assert retry_response.json()["id"] == request_id
         assert retry_response.json()["status"] == "pending"
+
+
+def test_dm_conversations_include_username_and_unread_counts_without_notifications():
+    with TestClient(app) as client:
+        sender = _register_user(client, "dm_sender")
+        _logout_user(client)
+        receiver = _register_user(client, "dm_receiver")
+
+        dm_response = client.post(
+            f"/api/chat/conversations/dm?target_user_id={sender['id']}",
+            json={},
+        )
+        assert dm_response.status_code == 201
+        conversation_id = dm_response.json()["id"]
+
+        _logout_user(client)
+        _login_user(client, sender["email"], sender["password"])
+        message_response = client.post(
+            "/api/chat/messages",
+            json={"conversation_id": conversation_id, "content": "Hello there"},
+        )
+        assert message_response.status_code == 201
+
+        sender_conversations = client.get("/api/chat/conversations")
+        assert sender_conversations.status_code == 200
+        sender_conversation = next(conv for conv in sender_conversations.json() if conv["id"] == conversation_id)
+        assert sender_conversation["other_participant_username"] == receiver["username"]
+        assert sender_conversation["unread_count"] == 0
+
+        _logout_user(client)
+        _login_user(client, receiver["email"], receiver["password"])
+        receiver_conversations = client.get("/api/chat/conversations")
+        assert receiver_conversations.status_code == 200
+        receiver_conversation = next(conv for conv in receiver_conversations.json() if conv["id"] == conversation_id)
+        assert receiver_conversation["other_participant_username"] == sender["username"]
+        assert receiver_conversation["unread_count"] == 1
+        assert receiver_conversation["title"] == sender["username"]
+
+        notifications_response = client.get("/api/chat/notifications")
+        assert notifications_response.status_code == 200
+        assert notifications_response.json()["notifications"] == []
+
+        messages_response = client.get(f"/api/chat/messages/{conversation_id}")
+        assert messages_response.status_code == 200
+        assert messages_response.json()[0]["content"] == "Hello there"
+
+        refreshed_conversations = client.get("/api/chat/conversations")
+        refreshed_conversation = next(conv for conv in refreshed_conversations.json() if conv["id"] == conversation_id)
+        assert refreshed_conversation["unread_count"] == 0
