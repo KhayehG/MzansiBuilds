@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 import { API_URL } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { Bell } from 'lucide-react';
@@ -11,6 +12,16 @@ const NotificationCenter = () => {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const { lastMessage } = useWebSocket();
+  const navigate = useNavigate();
+
+  const getNotificationRoute = (notification) => {
+    if (notification.route) return notification.route;
+    if (notification.type === 'new_follow' && notification.reference_id) return `/profile/${notification.reference_id}`;
+    if (["new_like", "new_comment", "comment_reply", "collaboration_request", "collaboration_update"].includes(notification.type) && notification.reference_id) {
+      return `/project/${notification.reference_id}`;
+    }
+    return null;
+  };
 
   const fetchNotifications = async () => {
     setLoading(true);
@@ -48,6 +59,18 @@ const NotificationCenter = () => {
     } catch (e) {}
   };
 
+  const handleNotificationClick = async (notification) => {
+    if (!notification.is_read) {
+      await markRead(notification.id);
+    }
+
+    const route = getNotificationRoute(notification);
+    setOpen(false);
+    if (route) {
+      navigate(route);
+    }
+  };
+
   if (!isAuthenticated) return null;
 
   const unread = notifications.filter(n => !n.is_read).length;
@@ -83,7 +106,7 @@ const NotificationCenter = () => {
             {notifications.map((n) => (
               <li
                 key={n.id}
-                onClick={() => !n.is_read && markRead(n.id)}
+                onClick={() => handleNotificationClick(n)}
                 className={`p-3 cursor-pointer hover:bg-gray-50 ${!n.is_read ? 'bg-blue-50 font-semibold' : ''}`}
               >
                 <span className="text-sm">{n.message}</span>

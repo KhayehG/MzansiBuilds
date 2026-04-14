@@ -34,6 +34,8 @@ async def update_collaboration_status(collab_id: str, status: str, request: Requ
         "type": "collaboration_update",
         "message": f"Your collaboration request on \"{project['title']}\" was {status}",
         "actor_id": user["_id"],
+        "reference_id": collab["project_id"],
+        "route": f"/project/{collab['project_id']}",
         "is_read": False,
         "created_at": utc_now_iso(),
     }

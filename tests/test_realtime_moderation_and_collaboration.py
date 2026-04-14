@@ -338,6 +338,114 @@ def test_rejected_collaboration_request_can_be_resubmitted():
         assert retry_response.json()["status"] == "pending"
 
 
+def test_collaboration_request_can_be_revoked_and_accepted_collaborator_can_leave():
+    with TestClient(app) as client:
+        owner = _register_user(client, "revoke_owner")
+        project = _create_project(client, "Revoke Collaboration Project")
+
+        _logout_user(client)
+        requester = _register_user(client, "revoke_requester")
+        request_response = client.post(
+            f"/api/projects/{project['id']}/collaborate",
+            json={"message": "I can help with docs and QA."},
+        )
+        assert request_response.status_code == 200
+
+        pending_detail = client.get(f"/api/projects/{project['id']}")
+        assert pending_detail.status_code == 200
+        assert pending_detail.json()["collaboration_status"] == "pending"
+
+        revoke_response = client.delete(f"/api/projects/{project['id']}/collaborate")
+        assert revoke_response.status_code == 200
+        assert revoke_response.json()["state"] == "revoked"
+
+        revoked_detail = client.get(f"/api/projects/{project['id']}")
+        assert revoked_detail.status_code == 200
+        assert revoked_detail.json()["collaboration_status"] is None
+        assert revoked_detail.json()["has_requested_collab"] is False
+
+        second_request_response = client.post(
+            f"/api/projects/{project['id']}/collaborate",
+            json={"message": "Trying again with a stronger pitch."},
+        )
+        assert second_request_response.status_code == 200
+
+        _logout_user(client)
+        _login_user(client, owner["email"], owner["password"])
+        received_response = client.get("/api/collaborations/requests-received")
+        assert received_response.status_code == 200
+        request_id = next(
+            request["id"]
+            for request in received_response.json()["requests"]
+            if request["project"]["id"] == project["id"]
+        )
+
+        accept_response = client.put(f"/api/collaborations/{request_id}?status=accepted")
+        assert accept_response.status_code == 200
+
+        owner_detail = client.get(f"/api/projects/{project['id']}")
+        assert owner_detail.status_code == 200
+        assert owner_detail.json()["collaborator_count"] == 1
+        assert owner_detail.json()["collaborators"][0]["username"] == requester["username"]
+
+        _logout_user(client)
+        _login_user(client, requester["email"], requester["password"])
+        leave_response = client.delete(f"/api/projects/{project['id']}/collaborate")
+        assert leave_response.status_code == 200
+        assert leave_response.json()["state"] == "left"
+
+        after_leave_detail = client.get(f"/api/projects/{project['id']}")
+        assert after_leave_detail.status_code == 200
+        assert after_leave_detail.json()["collaboration_status"] is None
+
+        _logout_user(client)
+        _login_user(client, owner["email"], owner["password"])
+        owner_after_leave = client.get(f"/api/projects/{project['id']}")
+        assert owner_after_leave.status_code == 200
+        assert owner_after_leave.json()["collaborators"] == []
+
+
+def test_notifications_include_click_routing_metadata():
+    with TestClient(app) as client:
+        followed_user = _register_user(client, "notif_target")
+
+        _logout_user(client)
+        follower = _register_user(client, "notif_actor")
+        follow_response = client.post(f"/api/users/{followed_user['id']}/follow")
+        assert follow_response.status_code == 200
+
+        _logout_user(client)
+        _login_user(client, followed_user["email"], followed_user["password"])
+        follow_notifications = client.get("/api/chat/notifications")
+        assert follow_notifications.status_code == 200
+        follow_notification = follow_notifications.json()["notifications"][0]
+        assert follow_notification["type"] == "new_follow"
+        assert follow_notification["reference_id"] == follower["id"]
+        assert follow_notification["route"] == f"/profile/{follower['id']}"
+
+        project = _create_project(client, "Notification Route Project")
+
+        _logout_user(client)
+        commenter = _register_user(client, "notif_commenter")
+        comment_response = client.post(
+            f"/api/projects/{project['id']}/comments",
+            json={"content": "Nice progress on this build."},
+        )
+        assert comment_response.status_code == 200
+
+        _logout_user(client)
+        _login_user(client, followed_user["email"], followed_user["password"])
+        comment_notifications = client.get("/api/chat/notifications")
+        assert comment_notifications.status_code == 200
+        comment_notification = next(
+            notification
+            for notification in comment_notifications.json()["notifications"]
+            if notification["type"] == "new_comment"
+        )
+        assert comment_notification["reference_id"] == project["id"]
+        assert comment_notification["route"] == f"/project/{project['id']}"
+
+
 def test_dm_conversations_include_username_and_unread_counts_without_notifications():
     with TestClient(app) as client:
         sender = _register_user(client, "dm_sender")
