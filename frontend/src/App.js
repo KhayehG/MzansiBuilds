@@ -16,6 +16,7 @@ import Profile from "./pages/Profile";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import Messages from "./pages/Messages";
+import AdminReports from "./pages/AdminReports";
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -36,6 +37,31 @@ const ProtectedRoute = ({ children }) => {
     return <Navigate to="/login" replace />;
   }
   
+  return children;
+};
+
+const AdminRoute = ({ children }) => {
+  const { isAuthenticated, loading, user } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center">
+          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-text-secondary font-mono">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (user?.role !== 'admin') {
+    return <Navigate to="/" replace />;
+  }
+
   return children;
 };
 
@@ -87,6 +113,11 @@ function App() {
                 <ProtectedRoute>
                   <Messages />
                 </ProtectedRoute>
+              } />
+              <Route path="/admin/reports" element={
+                <AdminRoute>
+                  <AdminReports />
+                </AdminRoute>
               } />
               
               {/* Fallback */}

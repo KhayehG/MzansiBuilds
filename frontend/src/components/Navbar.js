@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useWebSocket } from '../contexts/WebSocketContext';
-import { Code2, Home, Trophy, PlusCircle, User, LogOut, Wifi, WifiOff, Flag, MessageSquare } from 'lucide-react';
+import { Code2, Home, Trophy, PlusCircle, User, LogOut, Wifi, WifiOff, Flag, MessageSquare, Shield } from 'lucide-react';
 import ReportModal from './ReportModal';
 import NotificationCenter from './NotificationCenter';
 
@@ -107,6 +107,19 @@ const Navbar = () => {
                                     <User className="w-4 h-4" strokeWidth={2.5} />
                                     <span className="hidden sm:inline">{user?.username}</span>
                                 </Link>
+
+                                {user?.role === 'admin' && (
+                                    <Link
+                                        to="/admin/reports"
+                                        className={`flex items-center gap-1 px-3 py-2 text-sm font-bold uppercase tracking-wider transition-colors ${
+                                            isActive('/admin/reports') ? 'text-primary border-b-2 border-primary' : 'hover:text-primary'
+                                        }`}
+                                        data-testid="nav-admin-reports"
+                                    >
+                                        <Shield className="w-4 h-4" strokeWidth={2.5} />
+                                        <span className="hidden sm:inline">Admin</span>
+                                    </Link>
+                                )}
 
                                 <button
                                     onClick={handleLogout}

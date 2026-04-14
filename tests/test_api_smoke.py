@@ -36,6 +36,7 @@ def test_register_and_get_me_flow():
         me_response = client.get("/api/auth/me")
         assert me_response.status_code == 200
         assert me_response.json()["email"] == payload["email"]
+        assert me_response.json()["role"] == "user"
 
 
 def test_login_logout_flow():
@@ -84,3 +85,33 @@ def test_project_creation_and_update_flow():
         detail_response = client.get(f"/api/projects/{project_id}")
         assert detail_response.status_code == 200
         assert detail_response.json()["id"] == project_id
+
+
+def test_admin_reports_require_admin_and_admin_me_includes_role():
+    with TestClient(app) as client:
+        payload = _register_user(client)
+
+        create_report_response = client.post(
+            "/api/reports",
+            params={"report_type": "system", "reason": "bug", "description": "Admin workflow smoke test."},
+        )
+        assert create_report_response.status_code == 200
+
+        forbidden_response = client.get("/api/reports/admin/all")
+        assert forbidden_response.status_code == 403
+
+        client.post("/api/auth/logout")
+        admin_login_response = client.post(
+            "/api/auth/login",
+            json={"email": "admin@example.com", "password": "admin123"},
+        )
+        assert admin_login_response.status_code == 200
+        assert admin_login_response.json()["role"] == "admin"
+
+        admin_me_response = client.get("/api/auth/me")
+        assert admin_me_response.status_code == 200
+        assert admin_me_response.json()["role"] == "admin"
+
+        reports_response = client.get("/api/reports/admin/all")
+        assert reports_response.status_code == 200
+        assert reports_response.json()["total"] >= 1
