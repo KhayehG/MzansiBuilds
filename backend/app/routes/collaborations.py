@@ -45,3 +45,38 @@ async def update_collaboration_status(collab_id: str, status: str, request: Requ
         "data": {**collab_notif, "id": str(result_notif.inserted_id)},
     })
     return {"message": f"Collaboration request {status}"}
+
+
+@router.delete("/{collab_id}")
+async def remove_collaborator(collab_id: str, request: Request):
+    user = await get_current_user(request)
+    oid = validate_object_id(collab_id)
+    collab = await db.collaboration_requests.find_one({"_id": oid})
+    if not collab:
+        raise HTTPException(status_code=404, detail="Collaboration request not found")
+
+    project = await db.projects.find_one({"_id": ObjectId(collab["project_id"])})
+    if not project or project["user_id"] != user["_id"]:
+        raise HTTPException(status_code=403, detail="Only project owner can remove collaborators")
+    if collab.get("status") != "accepted":
+        raise HTTPException(status_code=400, detail="Only accepted collaborators can be removed")
+
+    await db.collaboration_requests.delete_one({"_id": oid})
+
+    removal_notif = {
+        "user_id": collab["requester_id"],
+        "type": "collaboration_update",
+        "message": f"You were removed from \"{project['title']}\"",
+        "actor_id": user["_id"],
+        "reference_id": collab["project_id"],
+        "route": f"/project/{collab['project_id']}",
+        "is_read": False,
+        "created_at": utc_now_iso(),
+    }
+    result_notif = await db.notifications.insert_one(removal_notif)
+    await manager.send_to_user(collab["requester_id"], {
+        "type": "notification",
+        "data": {**removal_notif, "id": str(result_notif.inserted_id)},
+    })
+
+    return {"message": "Collaborator removed"}

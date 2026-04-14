@@ -282,6 +282,20 @@ const ProjectDetail = () => {
         }
     };
 
+    const handleRemoveCollaborator = async (collabId) => {
+        if (!window.confirm('Remove this collaborator from the project?')) {
+            return;
+        }
+
+        try {
+            await axios.delete(`${API_URL}/api/collaborations/${collabId}`, { withCredentials: true });
+            toast.success('Collaborator removed');
+            await fetchData();
+        } catch (error) {
+            toast.error(error.response?.data?.detail || 'Failed to remove collaborator');
+        }
+    };
+
     const handleDeleteProject = async () => {
         if (!window.confirm('Are you sure you want to delete this project? This action cannot be undone.')) {
             return;
@@ -296,6 +310,11 @@ const ProjectDetail = () => {
     };
 
     const isOwner = isAuthenticated && user?.id === project?.user_id;
+    const isCollaborator = Boolean(project?.is_collaborator);
+    const canEditProject = Boolean(project?.can_edit_project);
+    const canManageCollaborationRequests = Boolean(project?.can_manage_collaboration_requests);
+    const canManageCollaborators = Boolean(project?.can_manage_collaborators);
+    const canDeleteProject = Boolean(project?.can_delete_project);
     const collaborationStatus = project?.collaboration_status;
     const collaborators = project?.collaborators || [];
     const hasActiveCollabRequest = collaborationStatus === 'pending' || collaborationStatus === 'accepted';
@@ -506,7 +525,7 @@ const ProjectDetail = () => {
                                 </div>
                             </div>
 
-                            {isOwner ? (
+                            {canEditProject ? (
                                 <div className="space-y-3">
                                     <Link
                                         to={`/project/${projectId}/edit`}
@@ -514,13 +533,20 @@ const ProjectDetail = () => {
                                     >
                                         <Edit2 className="w-4 h-4" /> Edit Project
                                     </Link>
-                                    <button
-                                        type="button"
-                                        onClick={handleDeleteProject}
-                                        className="btn-secondary-brutalist w-full flex items-center justify-center gap-2 text-error"
-                                    >
-                                        <Trash2 className="w-4 h-4" /> Delete Project
-                                    </button>
+                                    {canDeleteProject && (
+                                        <button
+                                            type="button"
+                                            onClick={handleDeleteProject}
+                                            className="btn-secondary-brutalist w-full flex items-center justify-center gap-2 text-error"
+                                        >
+                                            <Trash2 className="w-4 h-4" /> Delete Project
+                                        </button>
+                                    )}
+                                    {isCollaborator && (
+                                        <button type="button" onClick={handleCancelCollaboration} className="btn-secondary-brutalist w-full">
+                                            Leave Project
+                                        </button>
+                                    )}
                                 </div>
                             ) : (
                                 <div className="space-y-3">
@@ -617,7 +643,7 @@ const ProjectDetail = () => {
                     </div>
                 </section>
 
-                {isOwner && collaborations.length > 0 && (
+                {canManageCollaborationRequests && collaborations.length > 0 && (
                     <section className="card-brutalist p-6 mb-6" data-testid="collaboration-requests">
                         <h2 className="font-heading font-bold text-xl uppercase tracking-tight mb-4">
                             Collaboration Requests
@@ -667,6 +693,15 @@ const ProjectDetail = () => {
                                                     Reject
                                                 </button>
                                             </div>
+                                        )}
+                                        {canManageCollaborators && collab.status === 'accepted' && (
+                                            <button
+                                                type="button"
+                                                onClick={() => handleRemoveCollaborator(collab.id)}
+                                                className="btn-secondary-brutalist py-2 px-3 text-xs"
+                                            >
+                                                Remove
+                                            </button>
                                         )}
                                     </div>
                                 </div>
@@ -719,7 +754,7 @@ const ProjectDetail = () => {
                 {activeTab === 'updates' && (
                     <div data-testid="updates-section">
                         {/* Add Update Form (Owner Only) */}
-                        {isOwner && (
+                        {canEditProject && (
                             <form onSubmit={handleAddUpdate} className="mb-6" data-testid="update-form">
                                 <label className="block text-xs uppercase tracking-widest font-bold mb-2">
                                     Post a Milestone Update
@@ -747,6 +782,7 @@ const ProjectDetail = () => {
                         <UpdateFeed
                             updates={updates}
                             canManageUpdates={isOwner}
+                            currentUserId={user?.id}
                             onEditUpdate={handleEditUpdate}
                             onDeleteUpdate={handleDeleteUpdate}
                         />
@@ -800,7 +836,7 @@ const ProjectDetail = () => {
                                                         <span className="badge-idea">EXTERNAL</span>
                                                     )}
                                                     {getStageStatusBadge(stage.status)}
-                                                    {isOwner && stage.status === 'Completed' && (
+                                                    {canEditProject && stage.status === 'Completed' && (
                                                         <button
                                                             type="button"
                                                             onClick={() => handleReopenStage(stage.stage_name)}
@@ -844,7 +880,7 @@ const ProjectDetail = () => {
                                                     ))
                                                 )}
 
-                                                {isOwner && isEditable && (
+                                                {canEditProject && isEditable && (
                                                     <div className="timeline-item">
                                                         <div className="timeline-node" />
                                                         <div className="timeline-content space-y-2">
@@ -883,7 +919,7 @@ const ProjectDetail = () => {
                             </div>
                         )}
 
-                        {isOwner && (
+                        {canEditProject && (
                             <div className="mt-6 flex justify-end">
                                 <button
                                     type="button"
