@@ -3,8 +3,7 @@ import { Link } from 'react-router-dom';
 import { Code2, Mail, ArrowRight, ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import axios from 'axios';
-
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+import { API_URL } from '../lib/api';
 
 const ForgotPassword = () => {
     const [email, setEmail] = useState('');
@@ -15,7 +14,7 @@ const ForgotPassword = () => {
         e.preventDefault();
         setIsLoading(true);
         try {
-            await axios.post(`${API_BASE}/auth/forgot-password`, { email });
+            await axios.post(`${API_URL}/auth/forgot-password`, { email });
             setSubmitted(true);
         } catch {
             // Show generic message to avoid leaking info
