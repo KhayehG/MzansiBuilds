@@ -3,8 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Code2, Lock, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 import axios from 'axios';
-
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+import { API_URL } from '../lib/api';
 
 const ResetPassword = () => {
     const [searchParams] = useSearchParams();
@@ -32,7 +31,7 @@ const ResetPassword = () => {
 
         setIsLoading(true);
         try {
-            await axios.post(`${API_BASE}/auth/reset-password`, {
+            await axios.post(`${API_URL}/auth/reset-password`, {
                 token,
                 new_password: newPassword,
             });
