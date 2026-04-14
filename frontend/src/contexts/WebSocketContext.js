@@ -1,16 +1,47 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import axios from 'axios';
 
-import { WS_URL } from '../lib/api';
+import { useAuth } from './AuthContext';
+import { API_URL, WS_URL } from '../lib/api';
 
 const WebSocketContext = createContext(null);
 
 export const WebSocketProvider = ({ children }) => {
+    const { isAuthenticated } = useAuth();
     const [isConnected, setIsConnected] = useState(false);
     const [lastMessage, setLastMessage] = useState(null);
+    const [unreadMessageCount, setUnreadMessageCount] = useState(0);
     const wsRef = useRef(null);
     const reconnectTimeoutRef = useRef(null);
     const reconnectAttempts = useRef(0);
+    const isAuthenticatedRef = useRef(isAuthenticated);
+    const refreshUnreadMessageCountRef = useRef(null);
     const maxReconnectAttempts = 5;
+
+    const refreshUnreadMessageCount = useCallback(async () => {
+        if (!isAuthenticated) {
+            setUnreadMessageCount(0);
+            return;
+        }
+
+        try {
+            const response = await axios.get(`${API_URL}/api/chat/conversations`, { withCredentials: true });
+            const conversations = response.data || [];
+            setUnreadMessageCount(
+                conversations.reduce((total, conversation) => total + (conversation.unread_count || 0), 0)
+            );
+        } catch (error) {
+            setUnreadMessageCount(0);
+        }
+    }, [isAuthenticated]);
+
+    useEffect(() => {
+        isAuthenticatedRef.current = isAuthenticated;
+    }, [isAuthenticated]);
+
+    useEffect(() => {
+        refreshUnreadMessageCountRef.current = refreshUnreadMessageCount;
+    }, [refreshUnreadMessageCount]);
 
     const connect = useCallback(() => {
         if (wsRef.current?.readyState === WebSocket.OPEN) return;
@@ -28,6 +59,9 @@ export const WebSocketProvider = ({ children }) => {
                 try {
                     const data = JSON.parse(event.data);
                     setLastMessage(data);
+                    if (data.type === 'chat_message' && isAuthenticatedRef.current) {
+                        refreshUnreadMessageCountRef.current?.();
+                    }
                 } catch (e) {
                     console.error('Error parsing WebSocket message:', e);
                 }
@@ -73,10 +107,16 @@ export const WebSocketProvider = ({ children }) => {
         return () => disconnect();
     }, [connect, disconnect]);
 
+    useEffect(() => {
+        refreshUnreadMessageCount();
+    }, [refreshUnreadMessageCount]);
+
     return (
         <WebSocketContext.Provider value={{ 
             isConnected, 
             lastMessage, 
+            unreadMessageCount,
+            refreshUnreadMessageCount,
             sendMessage,
             connect,
             disconnect

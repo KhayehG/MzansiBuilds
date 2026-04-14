@@ -40,8 +40,9 @@ const ProjectChat = ({ projectId, canChat }) => {
   useEffect(() => {
     if (lastMessage?.type === 'chat_message' && lastMessage?.conversation_id === conversationId) {
       setMessages(prev => {
-        if (prev.some(m => m.id === lastMessage.message?.id)) return prev;
-        return [...prev, lastMessage.message];
+        const incomingMessage = lastMessage.message || lastMessage;
+        if (prev.some(m => m.id === incomingMessage.id)) return prev;
+        return [...prev, incomingMessage];
       });
     }
   }, [lastMessage, conversationId]);
@@ -54,11 +55,10 @@ const ProjectChat = ({ projectId, canChat }) => {
     e.preventDefault();
     if (!input.trim() || !conversationId) return;
     try {
-      const res = await axios.post(`${API_URL}/api/chat/messages`, {
+      await axios.post(`${API_URL}/api/chat/messages`, {
         conversation_id: conversationId,
         content: input.trim(),
       }, { withCredentials: true });
-      setMessages(prev => [...prev, res.data]);
       setInput('');
     } catch (e) {
       toast.error('Failed to send message');

@@ -8,7 +8,7 @@ import NotificationCenter from './NotificationCenter';
 
 const Navbar = () => {
     const { user, logout, isAuthenticated } = useAuth();
-    const { isConnected } = useWebSocket();
+    const { isConnected, unreadMessageCount } = useWebSocket();
     const navigate = useNavigate();
     const location = useLocation();
 
@@ -83,13 +83,18 @@ const Navbar = () => {
 
                                 <Link
                                     to="/messages"
-                                    className={`flex items-center gap-1 px-3 py-2 text-sm font-bold uppercase tracking-wider transition-colors ${
+                                    className={`relative flex items-center gap-1 px-3 py-2 text-sm font-bold uppercase tracking-wider transition-colors ${
                                         isActive('/messages') ? 'text-primary border-b-2 border-primary' : 'hover:text-primary'
                                     }`}
                                     data-testid="nav-messages"
                                 >
                                     <MessageSquare className="w-4 h-4" strokeWidth={2.5} />
                                     <span className="hidden sm:inline">Messages</span>
+                                    {unreadMessageCount > 0 && (
+                                        <span className="absolute -top-1 -right-1 bg-primary text-white text-[10px] min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full border-2 border-black font-bold leading-none">
+                                            {unreadMessageCount > 99 ? '99+' : unreadMessageCount}
+                                        </span>
+                                    )}
                                 </Link>
 
                                 <Link

@@ -9,7 +9,7 @@ import { toast } from 'sonner';
 
 const Messages = () => {
   const { user, isAuthenticated } = useAuth();
-  const { lastMessage, sendMessage } = useWebSocket();
+  const { lastMessage, refreshUnreadMessageCount } = useWebSocket();
   const [conversations, setConversations] = useState([]);
   const [activeConv, setActiveConv] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -38,17 +38,21 @@ const Messages = () => {
     if (!activeConv) return;
     setLoadingMsgs(true);
     axios.get(`${API_URL}/api/chat/messages/${activeConv.id}`, { withCredentials: true })
-      .then(res => setMessages(res.data || []))
+      .then(res => {
+        setMessages(res.data || []);
+        refreshUnreadMessageCount();
+      })
       .catch(() => setMessages([]))
       .finally(() => setLoadingMsgs(false));
-  }, [activeConv]);
+  }, [activeConv, refreshUnreadMessageCount]);
 
   useEffect(() => {
     if (!lastMessage) return;
     if (lastMessage.type === 'chat_message' && lastMessage.conversation_id === activeConv?.id) {
       setMessages(prev => {
-        if (prev.some(m => m.id === lastMessage.message?.id)) return prev;
-        return [...prev, lastMessage.message];
+        const incomingMessage = lastMessage.message || lastMessage;
+        if (prev.some(m => m.id === incomingMessage.id)) return prev;
+        return [...prev, incomingMessage];
       });
     }
   }, [lastMessage, activeConv]);
@@ -61,11 +65,10 @@ const Messages = () => {
     e.preventDefault();
     if (!input.trim() || !activeConv) return;
     try {
-      const res = await axios.post(`${API_URL}/api/chat/messages`, {
+      await axios.post(`${API_URL}/api/chat/messages`, {
         conversation_id: activeConv.id,
         content: input.trim(),
       }, { withCredentials: true });
-      setMessages(prev => [...prev, res.data]);
       setInput('');
     } catch (e) {
       toast.error('Failed to send message');
@@ -90,9 +93,8 @@ const Messages = () => {
   };
 
   const getConvLabel = (conv) => {
-    if (conv.type === 'project') return `Project: ${conv.project_id}`;
-    const other = conv.participants?.find(p => p !== user?.id);
-    return other ? `DM: ${other}` : 'Direct Message';
+    if (conv.type === 'project') return `Project: ${conv.project_title || conv.title || conv.project_id}`;
+    return `DM: ${conv.other_participant_username || conv.title || 'Direct Message'}`;
   };
 
   if (!isAuthenticated) return <div className="min-h-screen bg-background"><Navbar /><div className="p-8 text-center">Please log in to view messages.</div></div>;
@@ -129,6 +131,11 @@ const Messages = () => {
                   className={`w-full text-left px-4 py-3 text-sm font-bold border-b border-gray-200 hover:bg-white transition-colors ${activeConv?.id === conv.id ? 'bg-white border-l-4 border-l-primary' : ''}`}
                 >
                   {getConvLabel(conv)}
+                  {conv.unread_count > 0 && (
+                    <span className="ml-2 inline-flex min-w-[20px] h-5 items-center justify-center rounded-full border border-black bg-primary px-1 text-[10px] text-white">
+                      {conv.unread_count}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
