@@ -54,10 +54,10 @@ const EditProject = () => {
     useEffect(() => {
         const fetchProject = async () => {
             try {
-                const response = await axios.get(`${API_URL}/api/projects/${projectId}`);
+                const response = await axios.get(`${API_URL}/api/projects/${projectId}`, { withCredentials: true });
                 const project = response.data;
                 
-                if (project.user_id !== user?.id) {
+                if (!project.can_edit_project) {
                     toast.error('Not authorized to edit this project');
                     navigate(`/project/${projectId}`);
                     return;

@@ -11,6 +11,7 @@ const UpdateFeed = ({
     updates: initialUpdates,
     showProjectLink = false,
     canManageUpdates = false,
+    currentUserId = null,
     onEditUpdate,
     onDeleteUpdate,
 }) => {
@@ -130,6 +131,9 @@ const UpdateFeed = ({
     return (
         <div className="space-y-4" data-testid="update-feed">
             {updates.map((update, index) => (
+                (() => {
+                    const canManageThisUpdate = canManageUpdates || (currentUserId && update.user_id === currentUserId);
+                    return (
                 <div 
                     key={update.id} 
                     className="feed-item animate-fade-in"
@@ -195,7 +199,7 @@ const UpdateFeed = ({
                                 <p className="text-text-primary mb-2">{update.content}</p>
                             )}
 
-                            {canManageUpdates && editingUpdateId !== update.id && (
+                            {canManageThisUpdate && editingUpdateId !== update.id && (
                                 <div className="flex items-center gap-2 mb-3">
                                     <button
                                         type="button"
@@ -228,6 +232,8 @@ const UpdateFeed = ({
                         </div>
                     </div>
                 </div>
+                    );
+                })()
             ))}
         </div>
     );

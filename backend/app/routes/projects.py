@@ -109,6 +109,7 @@ async def _get_project_collaborators(project_id: str) -> list[dict]:
 
     return [
         {
+            "request_id": str(request["_id"]),
             "id": request["requester_id"],
             "username": user_map.get(request["requester_id"], {}).get("username", "Unknown"),
             "profile_picture_url": user_map.get(request["requester_id"], {}).get("profile_picture_url"),
@@ -116,6 +117,55 @@ async def _get_project_collaborators(project_id: str) -> list[dict]:
         }
         for request in accepted_requests
     ]
+
+
+async def _get_latest_collaboration_request(project_id: str, user_id: str) -> dict | None:
+    collab_request = await db.collaboration_requests.find(
+        {"project_id": project_id, "requester_id": user_id}
+    ).sort("created_at", -1).to_list(1)
+    return collab_request[0] if collab_request else None
+
+
+async def _is_project_collaborator(project_id: str, user_id: str) -> bool:
+    collab_request = await _get_latest_collaboration_request(project_id, user_id)
+    return bool(collab_request and collab_request.get("status") == "accepted")
+
+
+async def _get_project_permissions(project: dict, user: dict | None) -> dict:
+    is_owner = bool(user and project["user_id"] == user["_id"])
+    is_collaborator = False
+    if user and not is_owner:
+        is_collaborator = await _is_project_collaborator(str(project["_id"]), user["_id"])
+
+    can_edit_project = is_owner or is_collaborator
+    return {
+        "is_owner": is_owner,
+        "is_collaborator": is_collaborator,
+        "can_edit_project": can_edit_project,
+        "can_manage_collaboration_requests": is_owner,
+        "can_manage_collaborators": is_owner,
+        "can_delete_project": is_owner,
+    }
+
+
+async def _require_project_edit_access(project_id: str, request: Request) -> tuple[dict, dict, dict]:
+    user = await get_current_user(request)
+    project = await db.projects.find_one({"_id": validate_object_id(project_id)})
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    permissions = await _get_project_permissions(project, user)
+    if not permissions["can_edit_project"]:
+        raise HTTPException(status_code=403, detail="Not authorized to edit this project")
+
+    return project, user, permissions
+
+
+async def _require_project_owner(project_id: str, request: Request) -> tuple[dict, dict]:
+    project, current_user = await _get_project_for_read(project_id, request, require_auth=True)
+    if project["user_id"] != current_user["_id"]:
+        raise HTTPException(status_code=403, detail="Not authorized to manage this project")
+    return project, current_user
 
 
 @router.post("")
@@ -295,6 +345,7 @@ async def get_projects(
 async def get_project(project_id: str, request: Request):
     project, current_user = await _get_project_for_read(project_id, request)
     collaborators = await _get_project_collaborators(project_id)
+    permissions = await _get_project_permissions(project, current_user)
 
     user = await db.users.find_one(
         {"_id": ObjectId(project["user_id"])},
@@ -306,10 +357,7 @@ async def get_project(project_id: str, request: Request):
     if current_user:
         is_liked = await db.likes.find_one({"user_id": current_user["_id"], "project_id": project_id}) is not None
         if current_user["_id"] != project["user_id"]:
-            collab_request = await db.collaboration_requests.find(
-                {"project_id": project_id, "requester_id": current_user["_id"]}
-            ).sort("created_at", -1).to_list(1)
-            collab_request = collab_request[0] if collab_request else None
+            collab_request = await _get_latest_collaboration_request(project_id, current_user["_id"])
             if collab_request:
                 collaboration_status = collab_request.get("status")
                 has_requested_collab = True
@@ -333,19 +381,15 @@ async def get_project(project_id: str, request: Request):
         "is_liked": is_liked,
         "has_requested_collab": has_requested_collab,
         "collaboration_status": collaboration_status,
+        **permissions,
         "created_at": project.get("created_at", ""),
     }
 
 
 @router.put("/{project_id}")
 async def update_project(project_id: str, project_data: ProjectUpdate, request: Request):
-    user = await get_current_user(request)
+    project, _, _ = await _require_project_edit_access(project_id, request)
     oid = validate_object_id(project_id)
-    project = await db.projects.find_one({"_id": oid})
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    if project["user_id"] != user["_id"]:
-        raise HTTPException(status_code=403, detail="Not authorized to update this project")
 
     update_data = {key: value for key, value in project_data.model_dump().items() if value is not None}
     if "current_stage" in update_data:
@@ -419,12 +463,7 @@ async def get_stage_history(project_id: str, request: Request):
 
 @router.post("/{project_id}/stages/complete")
 async def complete_current_stage(project_id: str, request: Request):
-    user = await get_current_user(request)
-    project = await db.projects.find_one({"_id": validate_object_id(project_id)})
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    if project["user_id"] != user["_id"]:
-        raise HTTPException(status_code=403, detail="Only project owner can complete a stage")
+    project, _, _ = await _require_project_edit_access(project_id, request)
 
     sdlc_type = project.get("sdlc_type", "waterfall")
     stage_flow = get_stage_flow(sdlc_type)
@@ -499,12 +538,7 @@ async def complete_current_stage(project_id: str, request: Request):
 
 @router.post("/{project_id}/stages/move")
 async def move_stage(project_id: str, transition: StageTransitionCreate, request: Request):
-    user = await get_current_user(request)
-    project = await db.projects.find_one({"_id": validate_object_id(project_id)})
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    if project["user_id"] != user["_id"]:
-        raise HTTPException(status_code=403, detail="Only project owner can move stages")
+    project, _, _ = await _require_project_edit_access(project_id, request)
 
     sdlc_type = project.get("sdlc_type", "waterfall")
     stage_flow = get_stage_flow(sdlc_type)
@@ -578,12 +612,7 @@ async def move_stage(project_id: str, transition: StageTransitionCreate, request
 
 @router.post("/{project_id}/milestones")
 async def create_milestone(project_id: str, milestone_data: MilestoneCreate, request: Request):
-    user = await get_current_user(request)
-    project = await db.projects.find_one({"_id": validate_object_id(project_id)})
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    if project["user_id"] != user["_id"]:
-        raise HTTPException(status_code=403, detail="Only project owner can add milestones")
+    project, user, _ = await _require_project_edit_access(project_id, request)
 
     sdlc_type = project.get("sdlc_type", "waterfall")
     stage_flow = get_stage_flow(sdlc_type)
@@ -644,12 +673,7 @@ async def get_milestones(project_id: str, request: Request, stage_name: str | No
 
 @router.put("/{project_id}/milestones/{milestone_id}")
 async def update_milestone(project_id: str, milestone_id: str, data: MilestoneUpdate, request: Request):
-    user = await get_current_user(request)
-    project = await db.projects.find_one({"_id": validate_object_id(project_id)})
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    if project["user_id"] != user["_id"]:
-        raise HTTPException(status_code=403, detail="Only project owner can edit milestones")
+    project, _, _ = await _require_project_edit_access(project_id, request)
 
     existing = await db.milestones.find_one({"_id": validate_object_id(milestone_id), "project_id": project_id})
     if not existing:
@@ -705,12 +729,7 @@ async def update_milestone(project_id: str, milestone_id: str, data: MilestoneUp
 
 @router.delete("/{project_id}/milestones/{milestone_id}")
 async def delete_milestone(project_id: str, milestone_id: str, request: Request):
-    user = await get_current_user(request)
-    project = await db.projects.find_one({"_id": validate_object_id(project_id)})
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    if project["user_id"] != user["_id"]:
-        raise HTTPException(status_code=403, detail="Only project owner can delete milestones")
+    project, _, _ = await _require_project_edit_access(project_id, request)
 
     milestone = await db.milestones.find_one({"_id": validate_object_id(milestone_id), "project_id": project_id})
     if not milestone:
@@ -727,9 +746,7 @@ async def delete_milestone(project_id: str, milestone_id: str, request: Request)
 
 @router.delete("/{project_id}")
 async def delete_project(project_id: str, request: Request):
-    project, current_user = await _get_project_for_read(project_id, request, require_auth=True)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project, current_user = await _require_project_owner(project_id, request)
     if project["user_id"] != current_user["_id"]:
         raise HTTPException(status_code=403, detail="Not authorized to delete this project")
 
@@ -746,13 +763,8 @@ async def delete_project(project_id: str, request: Request):
 
 @router.post("/{project_id}/updates")
 async def create_update(project_id: str, update_data: UpdateCreate, request: Request):
-    user = await get_current_user(request)
+    project, user, _ = await _require_project_edit_access(project_id, request)
     oid = validate_object_id(project_id)
-    project = await db.projects.find_one({"_id": oid})
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    if project["user_id"] != user["_id"]:
-        raise HTTPException(status_code=403, detail="Only project owner can add updates")
 
     update_doc = {
         "project_id": project_id,
@@ -791,16 +803,13 @@ async def create_update(project_id: str, update_data: UpdateCreate, request: Req
 
 @router.put("/{project_id}/updates/{update_id}")
 async def edit_update(project_id: str, update_id: str, update_data: UpdateCreate, request: Request):
-    user = await get_current_user(request)
-    project = await db.projects.find_one({"_id": validate_object_id(project_id)})
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project, user, permissions = await _require_project_edit_access(project_id, request)
 
     update = await db.updates.find_one({"_id": validate_object_id(update_id), "project_id": project_id})
     if not update:
         raise HTTPException(status_code=404, detail="Update not found")
-    if update["user_id"] != user["_id"]:
-        raise HTTPException(status_code=403, detail="Only update author can edit updates")
+    if update["user_id"] != user["_id"] and not permissions["is_owner"]:
+        raise HTTPException(status_code=403, detail="Only the update author or project owner can edit updates")
 
     content = update_data.content.strip()
     if not content:
@@ -835,16 +844,13 @@ async def edit_update(project_id: str, update_id: str, update_data: UpdateCreate
 
 @router.delete("/{project_id}/updates/{update_id}")
 async def delete_update(project_id: str, update_id: str, request: Request):
-    user = await get_current_user(request)
-    project = await db.projects.find_one({"_id": validate_object_id(project_id)})
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    _, user, permissions = await _require_project_edit_access(project_id, request)
 
     update = await db.updates.find_one({"_id": validate_object_id(update_id), "project_id": project_id})
     if not update:
         raise HTTPException(status_code=404, detail="Update not found")
-    if update["user_id"] != user["_id"]:
-        raise HTTPException(status_code=403, detail="Only update author can delete updates")
+    if update["user_id"] != user["_id"] and not permissions["is_owner"]:
+        raise HTTPException(status_code=403, detail="Only the update author or project owner can delete updates")
 
     await db.updates.delete_one({"_id": update["_id"]})
     await db.likes.delete_many({"update_id": update_id})
@@ -1165,12 +1171,7 @@ async def delete_collaboration_request(project_id: str, request: Request):
 
 @router.get("/{project_id}/collaborations")
 async def get_collaboration_requests(project_id: str, request: Request):
-    user = await get_current_user(request)
-    project = await db.projects.find_one({"_id": validate_object_id(project_id)})
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    if project["user_id"] != user["_id"]:
-        raise HTTPException(status_code=403, detail="Only the project owner can view collaboration requests")
+    project, _current_user = await _require_project_owner(project_id, request)
 
     collabs = await db.collaboration_requests.find({"project_id": project_id}).sort("created_at", -1).to_list(100)
     requester_ids = list({collab["requester_id"] for collab in collabs})

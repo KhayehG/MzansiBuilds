@@ -446,6 +446,135 @@ def test_notifications_include_click_routing_metadata():
         assert comment_notification["route"] == f"/project/{project['id']}"
 
 
+def test_collaborator_can_edit_project_content_but_not_owner_only_actions():
+    with TestClient(app) as client:
+        owner = _register_user(client, "perm_owner")
+        project = _create_project(client, "Permission Coverage Project")
+
+        _logout_user(client)
+        collaborator = _register_user(client, "perm_collab")
+        request_response = client.post(
+            f"/api/projects/{project['id']}/collaborate",
+            json={"message": "I can contribute implementation work."},
+        )
+        assert request_response.status_code == 200
+
+        _logout_user(client)
+        _login_user(client, owner["email"], owner["password"])
+        received_response = client.get("/api/collaborations/requests-received")
+        collab_id = next(
+            request["id"]
+            for request in received_response.json()["requests"]
+            if request["project"]["id"] == project["id"]
+        )
+        accept_response = client.put(f"/api/collaborations/{collab_id}?status=accepted")
+        assert accept_response.status_code == 200
+
+        _logout_user(client)
+        _login_user(client, collaborator["email"], collaborator["password"])
+
+        detail_response = client.get(f"/api/projects/{project['id']}")
+        assert detail_response.status_code == 200
+        detail_payload = detail_response.json()
+        assert detail_payload["is_collaborator"] is True
+        assert detail_payload["can_edit_project"] is True
+        assert detail_payload["can_delete_project"] is False
+        assert detail_payload["can_manage_collaboration_requests"] is False
+
+        update_project_response = client.put(
+            f"/api/projects/{project['id']}",
+            json={"title": "Permission Coverage Project Updated"},
+        )
+        assert update_project_response.status_code == 200
+        assert update_project_response.json()["title"] == "Permission Coverage Project Updated"
+
+        add_update_response = client.post(
+            f"/api/projects/{project['id']}/updates",
+            json={"content": "Collaborator progress note."},
+        )
+        assert add_update_response.status_code == 200
+        update_id = add_update_response.json()["id"]
+
+        edit_update_response = client.put(
+            f"/api/projects/{project['id']}/updates/{update_id}",
+            json={"content": "Collaborator progress note edited."},
+        )
+        assert edit_update_response.status_code == 200
+
+        add_milestone_response = client.post(
+            f"/api/projects/{project['id']}/milestones",
+            json={
+                "stage_name": "planning",
+                "title": "Collaborator milestone",
+                "description": "Defined scope and approach.",
+                "is_retrospective": False,
+            },
+        )
+        assert add_milestone_response.status_code == 200
+
+        complete_stage_response = client.post(f"/api/projects/{project['id']}/stages/complete")
+        assert complete_stage_response.status_code == 200
+
+        move_stage_response = client.post(
+            f"/api/projects/{project['id']}/stages/move",
+            json={"to_stage": "planning", "reason": "Need to revisit the original plan."},
+        )
+        assert move_stage_response.status_code == 200
+
+        delete_project_response = client.delete(f"/api/projects/{project['id']}")
+        assert delete_project_response.status_code == 403
+
+        manage_requests_response = client.get(f"/api/projects/{project['id']}/collaborations")
+        assert manage_requests_response.status_code == 403
+
+        _logout_user(client)
+        outsider = _register_user(client, "perm_outsider")
+        outsider_update_edit = client.put(
+            f"/api/projects/{project['id']}/updates/{update_id}",
+            json={"content": "Outsider edit attempt."},
+        )
+        assert outsider_update_edit.status_code == 403
+
+
+def test_project_owner_can_remove_accepted_collaborator():
+    with TestClient(app) as client:
+        owner = _register_user(client, "remove_owner")
+        project = _create_project(client, "Owner Remove Collaborator Project")
+
+        _logout_user(client)
+        collaborator = _register_user(client, "remove_collab")
+        request_response = client.post(
+            f"/api/projects/{project['id']}/collaborate",
+            json={"message": "I can help maintain this."},
+        )
+        assert request_response.status_code == 200
+
+        _logout_user(client)
+        _login_user(client, owner["email"], owner["password"])
+        requests_response = client.get(f"/api/projects/{project['id']}/collaborations")
+        assert requests_response.status_code == 200
+        accepted_candidate = requests_response.json()[0]
+        accept_response = client.put(f"/api/collaborations/{accepted_candidate['id']}?status=accepted")
+        assert accept_response.status_code == 200
+
+        accepted_requests_response = client.get(f"/api/projects/{project['id']}/collaborations")
+        accepted_request = next(item for item in accepted_requests_response.json() if item["status"] == "accepted")
+
+        remove_response = client.delete(f"/api/collaborations/{accepted_request['id']}")
+        assert remove_response.status_code == 200
+
+        project_detail = client.get(f"/api/projects/{project['id']}")
+        assert project_detail.status_code == 200
+        assert project_detail.json()["collaborators"] == []
+
+        _logout_user(client)
+        _login_user(client, collaborator["email"], collaborator["password"])
+        collaborator_detail = client.get(f"/api/projects/{project['id']}")
+        assert collaborator_detail.status_code == 200
+        assert collaborator_detail.json()["is_collaborator"] is False
+        assert collaborator_detail.json()["can_edit_project"] is False
+
+
 def test_dm_conversations_include_username_and_unread_counts_without_notifications():
     with TestClient(app) as client:
         sender = _register_user(client, "dm_sender")
