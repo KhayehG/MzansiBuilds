@@ -301,3 +301,38 @@ def test_collaboration_inbox_and_status_updates_are_covered():
         accepted_response = client.get("/api/collaborations/inbox?status=accepted")
         assert accepted_response.status_code == 200
         assert any(request["id"] == request_id and request["status"] == "accepted" for request in accepted_response.json()["requests"])
+
+
+def test_rejected_collaboration_request_can_be_resubmitted():
+    with TestClient(app) as client:
+        owner = _register_user(client, "retry_owner")
+        project = _create_project(client, "Retry Collaboration Project")
+
+        _logout_user(client)
+        requester = _register_user(client, "retry_requester")
+        first_request_response = client.post(
+            f"/api/projects/{project['id']}/collaborate",
+            json={"message": "First attempt."},
+        )
+        assert first_request_response.status_code == 200
+
+        _logout_user(client)
+        _login_user(client, owner["email"], owner["password"])
+        received_response = client.get("/api/collaborations/requests-received")
+        request_id = next(
+            request["id"]
+            for request in received_response.json()["requests"]
+            if request["project"]["id"] == project["id"]
+        )
+        reject_response = client.put(f"/api/collaborations/{request_id}?status=rejected")
+        assert reject_response.status_code == 200
+
+        _logout_user(client)
+        _login_user(client, requester["email"], requester["password"])
+        retry_response = client.post(
+            f"/api/projects/{project['id']}/collaborate",
+            json={"message": "Second attempt with more detail."},
+        )
+        assert retry_response.status_code == 200
+        assert retry_response.json()["id"] == request_id
+        assert retry_response.json()["status"] == "pending"
