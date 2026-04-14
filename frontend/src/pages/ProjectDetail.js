@@ -285,7 +285,8 @@ const ProjectDetail = () => {
 
     const isOwner = isAuthenticated && user?.id === project?.user_id;
     const collaborationStatus = project?.collaboration_status;
-    const hasRequestedCollab = Boolean(project?.has_requested_collab || collaborationStatus);
+    const hasActiveCollabRequest = collaborationStatus === 'pending' || collaborationStatus === 'accepted';
+    const canRaiseHand = isAuthenticated && !isOwner && !hasActiveCollabRequest;
 
     const onCommentAdded = (newComment) => {
         setComments(prev => mergeIncomingComment(prev, newComment));
@@ -394,6 +395,14 @@ const ProjectDetail = () => {
     return (
         <div className="min-h-screen bg-background">
             <Navbar />
+            <ReportModal
+                isOpen={reportModal.open}
+                onClose={() => setReportModal({ open: false, type: null, itemId: null, userId: null, label: '' })}
+                reportType={reportModal.type || 'project'}
+                reportedItemId={reportModal.itemId}
+                reportedUserId={reportModal.userId}
+                contextLabel={reportModal.label || 'this project'}
+            />
             <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
                 {/* Back Button */}
                 <Link 
@@ -403,6 +412,221 @@ const ProjectDetail = () => {
                 >
                     <ArrowLeft className="w-4 h-4" /> Back to Feed
                 </Link>
+
+                <section className="card-brutalist p-6 mb-6" data-testid="project-summary">
+                    <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+                        <div className="flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-3 mb-3">
+                                {getCurrentStageBadge()}
+                                <span className="text-xs text-text-secondary font-mono flex items-center gap-1">
+                                    <Clock className="w-3 h-3" />
+                                    {formatDate(project.created_at)}
+                                </span>
+                            </div>
+
+                            <h1 className="font-heading font-black text-3xl uppercase tracking-tight mb-3 break-words">
+                                {project.title}
+                            </h1>
+                            <p className="text-text-secondary leading-relaxed whitespace-pre-wrap mb-4">
+                                {project.description}
+                            </p>
+
+                            {project.support_needed && (
+                                <div className="bg-surface border-2 border-black p-4 mb-4">
+                                    <p className="text-xs uppercase tracking-widest font-bold text-text-secondary mb-1">Looking for</p>
+                                    <p className="font-medium">{project.support_needed}</p>
+                                </div>
+                            )}
+
+                            <div className="flex flex-wrap items-center gap-4 text-sm">
+                                <Link to={`/profile/${project.user_id}`} className="inline-flex items-center gap-2 font-bold hover:text-primary transition-colors">
+                                    {project.profile_picture_url ? (
+                                        <img
+                                            src={project.profile_picture_url}
+                                            alt={project.username}
+                                            className="w-8 h-8 border-2 border-black object-cover"
+                                        />
+                                    ) : (
+                                        <div className="w-8 h-8 bg-black text-white flex items-center justify-center border-2 border-black font-bold text-xs">
+                                            {project.username?.[0]?.toUpperCase()}
+                                        </div>
+                                    )}
+                                    <span>@{project.username}</span>
+                                </Link>
+                                <span className="inline-flex items-center gap-2 text-text-secondary">
+                                    <User className="w-4 h-4" />
+                                    {project.user_bio || 'Builder on MzansiBuilds'}
+                                </span>
+                            </div>
+                        </div>
+
+                        <div className="w-full lg:w-80 space-y-4">
+                            <div className="border-2 border-black bg-white p-4 space-y-3">
+                                <div className="flex items-center justify-between gap-4 text-sm">
+                                    <span className="font-bold uppercase tracking-wide">Owner</span>
+                                    <span className="text-text-secondary">@{project.username}</span>
+                                </div>
+                                <div className="flex items-center justify-between gap-4 text-sm">
+                                    <span className="font-bold uppercase tracking-wide">Comments</span>
+                                    <span>{project.comment_count || 0}</span>
+                                </div>
+                                <div className="flex items-center justify-between gap-4 text-sm">
+                                    <span className="font-bold uppercase tracking-wide">Likes</span>
+                                    <span>{project.like_count || 0}</span>
+                                </div>
+                            </div>
+
+                            {isOwner ? (
+                                <div className="space-y-3">
+                                    <Link
+                                        to={`/project/${projectId}/edit`}
+                                        className="btn-primary-brutalist w-full flex items-center justify-center gap-2"
+                                    >
+                                        <Edit2 className="w-4 h-4" /> Edit Project
+                                    </Link>
+                                    <button
+                                        type="button"
+                                        onClick={handleDeleteProject}
+                                        className="btn-secondary-brutalist w-full flex items-center justify-center gap-2 text-error"
+                                    >
+                                        <Trash2 className="w-4 h-4" /> Delete Project
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    {!isAuthenticated && (
+                                        <div className="border-2 border-black bg-surface p-4 text-sm text-text-secondary">
+                                            Log in to collaborate or join project chat.
+                                        </div>
+                                    )}
+
+                                    {canRaiseHand && !showCollabForm && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowCollabForm(true)}
+                                            className="btn-primary-brutalist w-full flex items-center justify-center gap-2"
+                                        >
+                                            <HandMetal className="w-4 h-4" /> Raise Your Hand
+                                        </button>
+                                    )}
+
+                                    {isAuthenticated && collaborationStatus && (
+                                        <div className="border-2 border-black bg-surface p-4 text-sm">
+                                            <div className="font-bold uppercase tracking-wide mb-1">Collaboration Status</div>
+                                            <div className="inline-flex items-center gap-2">
+                                                {collaborationStatus === 'accepted' ? <CheckCircle className="w-4 h-4 text-green-600" /> : <AlertCircle className="w-4 h-4 text-amber-600" />}
+                                                <span className="font-medium">{String(collaborationStatus || 'pending').toUpperCase()}</span>
+                                            </div>
+                                            {collaborationStatus === 'rejected' && (
+                                                <p className="mt-2 text-text-secondary">
+                                                    This request was rejected. You can update your message and raise your hand again.
+                                                </p>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {canRaiseHand && showCollabForm && (
+                                        <form onSubmit={handleRequestCollaboration} className="border-2 border-black bg-white p-4 space-y-3">
+                                            <label className="block text-xs uppercase tracking-widest font-bold">
+                                                Tell the owner how you can help
+                                            </label>
+                                            <textarea
+                                                value={collabMessage}
+                                                onChange={(e) => setCollabMessage(e.target.value)}
+                                                className="input-brutalist w-full min-h-[120px]"
+                                                placeholder="Share your skills, availability, or why you want to join this project..."
+                                            />
+                                            <div className="flex gap-2 justify-end">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { setShowCollabForm(false); setCollabMessage(''); }}
+                                                    className="btn-secondary-brutalist"
+                                                >
+                                                    Cancel
+                                                </button>
+                                                <button
+                                                    type="submit"
+                                                    disabled={isRequestingCollab}
+                                                    className="btn-primary-brutalist disabled:opacity-50"
+                                                >
+                                                    {isRequestingCollab ? 'Sending...' : 'Send Request'}
+                                                </button>
+                                            </div>
+                                        </form>
+                                    )}
+
+                                    {isAuthenticated && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setReportModal({ open: true, type: 'project', itemId: project.id, userId: null, label: 'this project' })}
+                                            className="btn-secondary-brutalist w-full flex items-center justify-center gap-2"
+                                        >
+                                            <Flag className="w-4 h-4" /> Report Project
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </section>
+
+                {isOwner && collaborations.length > 0 && (
+                    <section className="card-brutalist p-6 mb-6" data-testid="collaboration-requests">
+                        <h2 className="font-heading font-bold text-xl uppercase tracking-tight mb-4">
+                            Collaboration Requests
+                        </h2>
+                        <div className="space-y-4">
+                            {collaborations.map((collab) => (
+                                <div key={collab.id} className="border-2 border-black bg-white p-4 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                    <div className="min-w-0">
+                                        <div className="flex items-center gap-3 mb-2">
+                                            {collab.requester_profile_picture ? (
+                                                <img
+                                                    src={collab.requester_profile_picture}
+                                                    alt={collab.requester_username}
+                                                    className="w-10 h-10 border-2 border-black object-cover"
+                                                />
+                                            ) : (
+                                                <div className="w-10 h-10 bg-black text-white flex items-center justify-center border-2 border-black font-bold">
+                                                    {collab.requester_username?.[0]?.toUpperCase()}
+                                                </div>
+                                            )}
+                                            <div>
+                                                <Link to={`/profile/${collab.requester_id}`} className="font-bold hover:text-primary transition-colors">
+                                                    @{collab.requester_username}
+                                                </Link>
+                                                <p className="text-xs text-text-secondary font-mono">{formatDate(collab.created_at)}</p>
+                                            </div>
+                                        </div>
+                                        <p className="text-sm whitespace-pre-wrap">{collab.message || 'No message provided.'}</p>
+                                    </div>
+
+                                    <div className="flex flex-col gap-2 md:items-end">
+                                        <span className="badge-idea">{String(collab.status).toUpperCase()}</span>
+                                        {collab.status === 'pending' && (
+                                            <div className="flex gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleUpdateCollabStatus(collab.id, 'accepted')}
+                                                    className="btn-primary-brutalist py-2 px-3 text-xs"
+                                                >
+                                                    Accept
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleUpdateCollabStatus(collab.id, 'rejected')}
+                                                    className="btn-secondary-brutalist py-2 px-3 text-xs"
+                                                >
+                                                    Reject
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+                )}
 
                 {/* Tabs */}
                 <div className="flex border-2 border-black mb-6">

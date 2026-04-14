@@ -9,7 +9,9 @@ import ReportModal from './ReportModal';
 import { API_URL } from '../lib/api';
 
 const ProjectCard = ({ project, showFullDescription = false, onLikeToggle }) => {
-    const { isAuthenticated } = useAuth();
+    const auth = useAuth();
+    const isAuthenticated = auth.isAuthenticated;
+    const currentUserId = auth.user?.id;
     const [isLiked, setIsLiked] = useState(project.is_liked || false);
     const [likeCount, setLikeCount] = useState(project.like_count || 0);
     const [isLiking, setIsLiking] = useState(false);
@@ -143,7 +145,7 @@ const ProjectCard = ({ project, showFullDescription = false, onLikeToggle }) => 
                     </Link>
 
                     {/* Report */}
-                    {isAuthenticated && user?.id !== project.user_id && (
+                    {isAuthenticated && currentUserId !== project.user_id && (
                         <button
                             type="button"
                             onClick={(e) => { e.preventDefault(); setReportOpen(true); }}

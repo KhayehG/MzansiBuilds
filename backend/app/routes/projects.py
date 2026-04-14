@@ -1030,17 +1030,40 @@ async def create_collaboration_request(project_id: str, collab_data: Collaborati
     )
     if existing:
         existing_status = existing.get("status", "pending")
-        raise HTTPException(status_code=400, detail=f"You have already raised a hand for this project ({existing_status})")
+        if existing_status != "rejected":
+            raise HTTPException(status_code=400, detail=f"You have already raised a hand for this project ({existing_status})")
 
-    collab_doc = {
-        "project_id": project_id,
-        "requester_id": user["_id"],
-        "message": clean_text(collab_data.message),
-        "status": "pending",
-        "created_at": utc_now_iso(),
-    }
-    result = await db.collaboration_requests.insert_one(collab_doc)
-    collab_id = str(result.inserted_id)
+        cleaned_message = clean_text(collab_data.message)
+        refreshed_at = utc_now_iso()
+        await db.collaboration_requests.update_one(
+            {"_id": existing["_id"]},
+            {
+                "$set": {
+                    "message": cleaned_message,
+                    "status": "pending",
+                    "created_at": refreshed_at,
+                    "updated_at": refreshed_at,
+                }
+            },
+        )
+        collab_id = str(existing["_id"])
+        collab_doc = {
+            "project_id": project_id,
+            "requester_id": user["_id"],
+            "message": cleaned_message,
+            "status": "pending",
+            "created_at": refreshed_at,
+        }
+    else:
+        collab_doc = {
+            "project_id": project_id,
+            "requester_id": user["_id"],
+            "message": clean_text(collab_data.message),
+            "status": "pending",
+            "created_at": utc_now_iso(),
+        }
+        result = await db.collaboration_requests.insert_one(collab_doc)
+        collab_id = str(result.inserted_id)
 
     await email_service.send_notification_email(
         project["user_id"],
