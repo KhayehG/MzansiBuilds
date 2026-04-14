@@ -523,7 +523,7 @@ const Profile = () => {
                         {/* Projects Tab */}
                         {activeTab === 'projects' && (
                             <>
-                                {isOwnProfile && (
+                                {isOwnProfile && currentUser?.role !== 'admin' && (
                                     <div className="flex justify-end mb-4">
                                         <Link to="/create" className="btn-primary-brutalist py-2 px-4 text-sm">
                                             New Project
@@ -542,7 +542,7 @@ const Profile = () => {
                                         <p className="text-text-secondary text-lg">
                                             {isOwnProfile ? "You haven't created any projects yet" : "No projects yet"}
                                         </p>
-                                        {isOwnProfile && (
+                                        {isOwnProfile && currentUser?.role !== 'admin' && (
                                             <Link to="/create" className="btn-primary-brutalist inline-block mt-4">
                                                 Start Your First Project
                                             </Link>

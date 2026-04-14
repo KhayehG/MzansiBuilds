@@ -20,7 +20,7 @@ def _register_user(client: TestClient) -> dict:
     response = client.post("/api/auth/register", json=payload)
     assert response.status_code == 200
     assert "access_token" in response.cookies
-    return payload
+    return {**payload, **response.json()}
 
 
 def test_health_endpoint():
@@ -115,3 +115,87 @@ def test_admin_reports_require_admin_and_admin_me_includes_role():
         reports_response = client.get("/api/reports/admin/all")
         assert reports_response.status_code == 200
         assert reports_response.json()["total"] >= 1
+
+
+def test_admin_overview_and_user_suspension_flow():
+    with TestClient(app) as client:
+        target = _register_user(client)
+
+        client.post("/api/auth/logout")
+        admin_login_response = client.post(
+            "/api/auth/login",
+            json={"email": "admin@example.com", "password": "admin123"},
+        )
+        assert admin_login_response.status_code == 200
+
+        overview_response = client.get("/api/admin/overview")
+        assert overview_response.status_code == 200
+        assert "pending_reports" in overview_response.json()
+        assert "suspended_users" in overview_response.json()
+
+        suspended_response = client.put(
+            f"/api/users/admin/{target['id']}/suspension?suspended=true&reason=policy",
+        )
+        assert suspended_response.status_code == 200
+        assert suspended_response.json()["is_suspended"] is True
+
+        client.post("/api/auth/logout")
+        blocked_login_response = client.post(
+            "/api/auth/login",
+            json={"email": target["email"], "password": target["password"]},
+        )
+        assert blocked_login_response.status_code == 403
+
+        client.post(
+            "/api/auth/login",
+            json={"email": "admin@example.com", "password": "admin123"},
+        )
+        restored_response = client.put(
+            f"/api/users/admin/{target['id']}/suspension?suspended=false",
+        )
+        assert restored_response.status_code == 200
+        assert restored_response.json()["is_suspended"] is False
+
+        client.post("/api/auth/logout")
+        restored_login_response = client.post(
+            "/api/auth/login",
+            json={"email": target["email"], "password": target["password"]},
+        )
+        assert restored_login_response.status_code == 200
+
+
+def test_username_uniqueness_is_case_insensitive_and_admin_cannot_create_projects():
+    with TestClient(app) as client:
+        first = _unique_user_payload()
+        register_first = client.post("/api/auth/register", json=first)
+        assert register_first.status_code == 200
+
+        duplicate = {
+            **_unique_user_payload(),
+            "username": first["username"].upper(),
+        }
+        register_duplicate = client.post("/api/auth/register", json=duplicate)
+        assert register_duplicate.status_code == 400
+        assert register_duplicate.json()["detail"] == "Username already taken"
+
+        profile_update = client.put("/api/users/me", json={"username": first["username"].upper()})
+        assert profile_update.status_code == 200
+
+        client.post("/api/auth/logout")
+        admin_login_response = client.post(
+            "/api/auth/login",
+            json={"email": "admin@example.com", "password": "admin123"},
+        )
+        assert admin_login_response.status_code == 200
+
+        create_response = client.post(
+            "/api/projects",
+            json={
+                "title": "Admin Project Attempt",
+                "description": "This project should not be creatable by an admin user.",
+                "stage": "idea",
+                "support_needed": "None",
+            },
+        )
+        assert create_response.status_code == 403
+        assert create_response.json()["detail"] == "Admin accounts cannot create projects"

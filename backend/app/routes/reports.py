@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 
 from ..core.database import db
 from ..services.auth import get_current_user
+from ..services.realtime import manager
 from ..utils.common import utc_now_iso
 
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -129,12 +130,14 @@ async def get_all_reports(
         if report.get("reported_user_id"):
             reported_user = await db.users.find_one(
                 {"_id": ObjectId(report["reported_user_id"])},
-                {"username": 1, "profile_picture_url": 1},
+                {"username": 1, "profile_picture_url": 1, "is_suspended": 1, "suspension_reason": 1},
             )
             report["reported_user"] = {
                 "id": str(reported_user["_id"]),
                 "username": reported_user["username"],
                 "profile_picture_url": reported_user.get("profile_picture_url"),
+                "is_suspended": reported_user.get("is_suspended", False),
+                "suspension_reason": reported_user.get("suspension_reason", ""),
             } if reported_user else None
         if report.get("report_type") == "project" and report.get("reported_item_id"):
             project = await db.projects.find_one(
@@ -242,6 +245,69 @@ async def hide_reported_content(
             {"$set": {"status": "resolved", "updated_at": utc_now_iso()}},
         )
 
+        await manager.broadcast(
+            {
+                "type": "moderation_content_changed",
+                "data": {
+                    "action": "hidden",
+                    "report_id": report_id,
+                    "report_type": report.get("report_type"),
+                    "reported_item_id": report.get("reported_item_id"),
+                },
+            }
+        )
+
         return {"message": f"Content hidden due to report {report_id}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/admin/{report_id}/unhide-content")
+async def unhide_reported_content(
+    request: Request,
+    report_id: str,
+):
+    user = await get_current_user(request)
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    try:
+        report = await db.reports.find_one({"_id": ObjectId(report_id)})
+        if not report:
+            raise HTTPException(status_code=404, detail="Report not found")
+
+        if report.get("report_type") == "project":
+            await db.projects.update_one(
+                {"_id": ObjectId(report["reported_item_id"])} ,
+                {"$set": {"hidden": False}, "$unset": {"hidden_at": "", "hidden_reason": ""}},
+            )
+        elif report.get("report_type") == "comment":
+            await db.comments.update_one(
+                {"_id": ObjectId(report["reported_item_id"])} ,
+                {"$set": {"hidden": False}, "$unset": {"hidden_at": "", "hidden_reason": ""}},
+            )
+        else:
+            raise HTTPException(status_code=400, detail="Only project and comment reports can be unhidden")
+
+        await db.reports.update_one(
+            {"_id": ObjectId(report_id)},
+            {"$set": {"status": "dismissed", "updated_at": utc_now_iso()}},
+        )
+
+        await manager.broadcast(
+            {
+                "type": "moderation_content_changed",
+                "data": {
+                    "action": "unhidden",
+                    "report_id": report_id,
+                    "report_type": report.get("report_type"),
+                    "reported_item_id": report.get("reported_item_id"),
+                },
+            }
+        )
+
+        return {"message": f"Content unhidden for report {report_id}"}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

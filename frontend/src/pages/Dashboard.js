@@ -107,9 +107,11 @@ const Dashboard = () => {
             } else if (lastMessage.type === 'new_update') {
                 setFeed(prev => [{ type: 'update', ...lastMessage.data }, ...prev]);
                 toast.info(`New update on ${lastMessage.data.project_title}`);
+            } else if (lastMessage.type === 'moderation_content_changed') {
+                fetchData();
             }
         }
-    }, [lastMessage]);
+    }, [lastMessage, fetchData]);
 
     const formatDate = (dateString) => {
         if (!dateString) return '';

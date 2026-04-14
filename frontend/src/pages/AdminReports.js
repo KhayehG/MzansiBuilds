@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
-import { EyeOff, Filter, RefreshCw, ShieldAlert, User, MessageSquare, FolderKanban, CheckCircle2, XCircle } from 'lucide-react';
+import { Eye, EyeOff, Filter, RefreshCw, ShieldAlert, ShieldBan, ShieldCheck, MessageSquare, CheckCircle2, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 import Navbar from '../components/Navbar';
@@ -58,6 +58,34 @@ const AdminReports = () => {
         }
     };
 
+    const unhideContent = async (reportId) => {
+        try {
+            await axios.put(`${API_URL}/api/reports/admin/${reportId}/unhide-content`, {}, { withCredentials: true });
+            toast.success('Content restored');
+            await fetchReports();
+        } catch (error) {
+            toast.error(error.response?.data?.detail || 'Failed to restore content');
+        }
+    };
+
+    const updateUserSuspension = async (report, suspended) => {
+        const userId = report.reported_user?.id;
+        if (!userId) return;
+
+        try {
+            const params = new URLSearchParams({ suspended: String(suspended) });
+            if (suspended) {
+                params.set('reason', `Triggered from report: ${report.reason}`);
+            }
+
+            await axios.put(`${API_URL}/api/users/admin/${userId}/suspension?${params.toString()}`, {}, { withCredentials: true });
+            toast.success(suspended ? 'User suspended' : 'User restored');
+            await fetchReports();
+        } catch (error) {
+            toast.error(error.response?.data?.detail || 'Failed to update user access');
+        }
+    };
+
     const renderTarget = (report) => {
         if (report.report_type === 'project' && report.reported_project) {
             return (
@@ -108,6 +136,10 @@ const AdminReports = () => {
                         <h1 className="font-heading font-black text-4xl tracking-tighter">ADMIN REPORTS</h1>
                     </div>
                     <p className="text-text-secondary text-lg">Review reported users, comments, and projects.</p>
+                    <div className="flex flex-wrap gap-3 mt-4">
+                        <Link to="/admin" className="btn-secondary-brutalist">Dashboard Home</Link>
+                        <Link to="/admin/users" className="btn-secondary-brutalist">Manage Users</Link>
+                    </div>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-4 mb-8 pb-6 border-b-2 border-black">
@@ -202,9 +234,23 @@ const AdminReports = () => {
                                         <button onClick={() => updateReportStatus(report._id, 'dismissed')} className="btn-secondary-brutalist w-full flex items-center justify-center gap-2">
                                             <XCircle className="w-4 h-4" /> Dismiss
                                         </button>
-                                        {(report.report_type === 'project' || report.report_type === 'comment') && (
+                                        {(report.report_type === 'project' || report.report_type === 'comment') && !report.reported_project?.hidden && !report.reported_comment?.hidden && (
                                             <button onClick={() => hideContent(report._id)} className="btn-secondary-brutalist w-full flex items-center justify-center gap-2 text-error">
                                                 <EyeOff className="w-4 h-4" /> Hide Content
+                                            </button>
+                                        )}
+                                        {(report.reported_project?.hidden || report.reported_comment?.hidden) && (
+                                            <button onClick={() => unhideContent(report._id)} className="btn-secondary-brutalist w-full flex items-center justify-center gap-2">
+                                                <Eye className="w-4 h-4" /> Restore Content
+                                            </button>
+                                        )}
+                                        {report.report_type === 'user' && report.reported_user && (
+                                            <button
+                                                onClick={() => updateUserSuspension(report, !report.reported_user.is_suspended)}
+                                                className="btn-secondary-brutalist w-full flex items-center justify-center gap-2"
+                                            >
+                                                {report.reported_user.is_suspended ? <ShieldCheck className="w-4 h-4" /> : <ShieldBan className="w-4 h-4" />}
+                                                {report.reported_user.is_suspended ? 'Restore User' : 'Suspend User'}
                                             </button>
                                         )}
                                     </div>

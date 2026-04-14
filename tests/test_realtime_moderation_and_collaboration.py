@@ -265,6 +265,66 @@ def test_hidden_comments_are_filtered_from_public_comment_reads():
         assert comments_response.json() == []
 
 
+def test_admin_can_unhide_moderated_project_content():
+    with TestClient(app) as client:
+        owner = _register_user(client, "restore_owner")
+        project = _create_project(client, "Restore Moderated Project")
+        broadcast_events: list[dict] = []
+
+        async def capture_broadcast(message: dict) -> None:
+            broadcast_events.append(message)
+
+        original_broadcast = manager.broadcast
+        manager.broadcast = capture_broadcast
+
+        try:
+            _logout_user(client)
+            _register_user(client, "restore_reporter")
+            report_response = _submit_report(
+                client,
+                report_type="project",
+                reason="spam",
+                reported_item_id=project["id"],
+            )
+            assert report_response.status_code == 200
+            report_id = report_response.json()["_id"]
+
+            _logout_user(client)
+            _login_admin(client)
+            hide_response = client.delete(f"/api/reports/admin/{report_id}/hide-content")
+            assert hide_response.status_code == 200
+            assert any(
+                event.get("type") == "moderation_content_changed"
+                and event.get("data", {}).get("action") == "hidden"
+                and event.get("data", {}).get("reported_item_id") == project["id"]
+                for event in broadcast_events
+            )
+
+            _logout_user(client)
+            hidden_detail = client.get(f"/api/projects/{project['id']}")
+            hidden_feed = client.get("/api/feed")
+            assert hidden_detail.status_code == 404
+            assert all(item.get("id") != project["id"] for item in hidden_feed.json())
+
+            _login_admin(client)
+            unhide_response = client.put(f"/api/reports/admin/{report_id}/unhide-content")
+            assert unhide_response.status_code == 200
+            assert any(
+                event.get("type") == "moderation_content_changed"
+                and event.get("data", {}).get("action") == "unhidden"
+                and event.get("data", {}).get("reported_item_id") == project["id"]
+                for event in broadcast_events
+            )
+
+            _logout_user(client)
+            restored_detail = client.get(f"/api/projects/{project['id']}")
+            restored_feed = client.get("/api/feed")
+            assert restored_detail.status_code == 200
+            assert any(item.get("id") == project["id"] for item in restored_feed.json())
+        finally:
+            manager.broadcast = original_broadcast
+
+
 def test_collaboration_inbox_and_status_updates_are_covered():
     with TestClient(app) as client:
         owner = _register_user(client, "collab_owner")

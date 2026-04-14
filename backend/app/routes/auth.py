@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
@@ -32,10 +33,11 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 async def register(user_data: UserCreate, response: Response):
     email = user_data.email.lower().strip()
     username = user_data.username.strip()
+    username_pattern = {"$regex": f"^{re.escape(username)}$", "$options": "i"}
 
     if await db.users.find_one({"email": email}):
         raise HTTPException(status_code=400, detail="Email already registered")
-    if await db.users.find_one({"username": username}):
+    if await db.users.find_one({"username": username_pattern}):
         raise HTTPException(status_code=400, detail="Username already taken")
 
     user_doc = {
@@ -52,6 +54,8 @@ async def register(user_data: UserCreate, response: Response):
         "follower_count": 0,
         "following_count": 0,
         "role": "user",
+        "is_suspended": False,
+        "suspension_reason": "",
         "created_at": utc_now_iso(),
     }
     result = await db.users.insert_one(user_doc)
@@ -94,6 +98,9 @@ async def login(user_data: UserLogin, response: Response, request: Request):
         )
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
+    if user.get("is_suspended"):
+        raise HTTPException(status_code=403, detail="Account suspended")
+
     await db.login_attempts.delete_one({"identifier": identifier})
 
     user_id = str(user["_id"])
@@ -107,6 +114,7 @@ async def login(user_data: UserLogin, response: Response, request: Request):
         "username": user["username"],
         "bio": user.get("bio", ""),
         "role": user.get("role", "user"),
+        "is_suspended": user.get("is_suspended", False),
         "created_at": user.get("created_at", ""),
     }
 
@@ -126,6 +134,7 @@ async def get_me(request: Request):
         "username": user["username"],
         "bio": user.get("bio", ""),
         "role": user.get("role", "user"),
+        "is_suspended": user.get("is_suspended", False),
         "profile_picture_url": user.get("profile_picture_url"),
         "skills": user.get("skills", []),
         "github_url": user.get("github_url"),
