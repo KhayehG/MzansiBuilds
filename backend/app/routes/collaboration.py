@@ -33,7 +33,7 @@ async def get_collaboration_inbox(
     # Enrich with project and owner details
     enriched = []
     for req in requests:
-        req["_id"] = str(req["_id"])
+        req["id"] = str(req.pop("_id"))
         
         # Get project details
         project = await db.projects.find_one({"_id": ObjectId(req["project_id"])})
@@ -90,7 +90,7 @@ async def get_collaboration_requests_received(
     # Enrich with requester and project details
     enriched = []
     for req in requests:
-        req["_id"] = str(req["_id"])
+        req["id"] = str(req.pop("_id"))
         
         # Get requester details
         requester = await db.users.find_one({"_id": ObjectId(req["requester_id"])})

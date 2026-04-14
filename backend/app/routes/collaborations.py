@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from ..core.database import db
 from ..services.auth import get_current_user, validate_object_id
+from ..services.realtime import manager
 from ..utils.common import utc_now_iso
 
 router = APIRouter(prefix="/collaborations", tags=["collaborations"])
@@ -28,4 +29,17 @@ async def update_collaboration_status(collab_id: str, status: str, request: Requ
         {"_id": oid},
         {"$set": {"status": status, "updated_at": utc_now_iso()}},
     )
+    collab_notif = {
+        "user_id": collab["requester_id"],
+        "type": "collaboration_update",
+        "message": f"Your collaboration request on \"{project['title']}\" was {status}",
+        "actor_id": user["_id"],
+        "is_read": False,
+        "created_at": utc_now_iso(),
+    }
+    result_notif = await db.notifications.insert_one(collab_notif)
+    await manager.send_to_user(collab["requester_id"], {
+        "type": "notification",
+        "data": {**collab_notif, "id": str(result_notif.inserted_id)},
+    })
     return {"message": f"Collaboration request {status}"}

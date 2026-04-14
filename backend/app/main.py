@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from bson import ObjectId
+from bson.errors import InvalidId
 from contextlib import asynccontextmanager, suppress
+import json
 
 import jwt
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -11,6 +14,7 @@ from .core.config import JWT_ALGORITHM, USE_MOCK_DB, allow_origin_regex, allowed
 from .core.database import (
     PERSIST_MOCK_DB,
     close_database,
+    db,
     initialize_database,
     persist_mock_data,
     seed_admin_user,
@@ -76,11 +80,80 @@ app.add_middleware(
 )
 
 
+async def _get_websocket_event_participants(user_id: str | None, conversation_id: str | None) -> list[str]:
+    if not user_id or not conversation_id:
+        return []
+
+    try:
+        conversation = await db.conversations.find_one({"_id": ObjectId(conversation_id)})
+    except (InvalidId, TypeError):
+        return []
+
+    if not conversation:
+        return []
+
+    participants = [str(participant_id) for participant_id in conversation.get("participants", [])]
+    if conversation.get("type") == "project" and conversation.get("project_id"):
+        try:
+            project = await db.projects.find_one({"_id": ObjectId(conversation["project_id"])})
+        except (InvalidId, TypeError):
+            project = None
+
+        if not project:
+            return []
+
+        participants = [str(project["user_id"])]
+        accepted_requests = await db.collaboration_requests.find(
+            {"project_id": conversation["project_id"], "status": "accepted"}
+        ).to_list(200)
+        participants.extend(str(request["requester_id"]) for request in accepted_requests)
+        participants = list(dict.fromkeys(participants))
+
+        if set(conversation.get("participants", [])) != set(participants):
+            await db.conversations.update_one(
+                {"_id": conversation["_id"]},
+                {"$set": {"participants": participants}},
+            )
+
+    if user_id not in participants:
+        return []
+
+    return participants
+
+
+async def dispatch_websocket_event(user_id: str | None, event: dict) -> bool:
+    event_type = event.get("type")
+    if event_type not in {"chat_message", "typing"}:
+        return False
+
+    participants = await _get_websocket_event_participants(user_id, event.get("conversation_id"))
+    if not participants:
+        return False
+
+    if event_type == "chat_message":
+        payload = {
+            "type": "chat_message",
+            "conversation_id": event.get("conversation_id"),
+            "sender_id": user_id,
+            "content": event.get("content"),
+        }
+    else:
+        payload = {
+            "type": "typing",
+            "conversation_id": event.get("conversation_id"),
+            "user_id": user_id,
+        }
+
+    for participant_id in participants:
+        await manager.send_to_user(participant_id, payload)
+
+    return True
+
+
 
 # --- WebSocket endpoint with chat event handling ---
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, token: str | None = None):
-    import json
     user_id = None
     auth_token = token or websocket.cookies.get("access_token")
     if auth_token:
@@ -100,23 +173,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str | None = None):
             except Exception:
                 continue
 
-            # Basic chat event handling
-            if event.get("type") == "chat_message":
-                # Broadcast to all participants in the conversation (stub: broadcast to all for now)
-                await manager.broadcast({
-                    "type": "chat_message",
-                    "conversation_id": event.get("conversation_id"),
-                    "sender_id": user_id,
-                    "content": event.get("content"),
-                })
-            # Typing indicator (optional)
-            elif event.get("type") == "typing":
-                await manager.broadcast({
-                    "type": "typing",
-                    "conversation_id": event.get("conversation_id"),
-                    "user_id": user_id,
-                })
-            # Extend with more event types as needed
+            await dispatch_websocket_event(user_id, event)
     except WebSocketDisconnect:
         await manager.disconnect(websocket, user_id)
 

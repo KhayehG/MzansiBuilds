@@ -70,6 +70,19 @@ async def add_like(like_data: LikeCreate, request: Request):
             "new_like",
             {"liker_name": user["username"], "content_type": target_type},
         )
+        notification_doc = {
+            "user_id": target_doc["user_id"],
+            "type": "new_like",
+            "message": f"@{user['username']} liked your {target_type}",
+            "actor_id": user["_id"],
+            "is_read": False,
+            "created_at": utc_now_iso(),
+        }
+        result_notif = await db.notifications.insert_one(notification_doc)
+        await manager.send_to_user(target_doc["user_id"], {
+            "type": "notification",
+            "data": {**notification_doc, "id": str(result_notif.inserted_id)},
+        })
 
     await manager.broadcast(
         {
@@ -124,7 +137,9 @@ async def get_feed(request: Request, mode: Literal["global", "following"] = Quer
         if not following_ids:
             return []
 
-    project_query = {"user_id": {"$in": following_ids}} if mode == "following" else {}
+    project_query = {"hidden": {"$ne": True}}
+    if mode == "following":
+        project_query["user_id"] = {"$in": following_ids}
     update_query = {"user_id": {"$in": following_ids}} if mode == "following" else {}
     projects = await db.projects.find(project_query).sort("created_at", -1).to_list(20)
     updates = await db.updates.find(update_query).sort("created_at", -1).to_list(20)
@@ -139,7 +154,7 @@ async def get_feed(request: Request, mode: Literal["global", "following"] = Quer
     user_map = {str(user["_id"]): user for user in users}
 
     project_docs = await db.projects.find(
-        {"_id": {"$in": [ObjectId(project_id) for project_id in project_ids]}},
+        {"_id": {"$in": [ObjectId(project_id) for project_id in project_ids]}, "hidden": {"$ne": True}},
         {"_id": 1, "title": 1},
     ).to_list(500)
     project_map = {str(project["_id"]): project["title"] for project in project_docs}
@@ -175,6 +190,8 @@ async def get_feed(request: Request, mode: Literal["global", "following"] = Quer
             }
         )
     for update in updates:
+        if update["project_id"] not in project_map:
+            continue
         update_user = user_map.get(update["user_id"], {})
         feed_items.append(
             {
@@ -198,7 +215,7 @@ async def get_feed(request: Request, mode: Literal["global", "following"] = Quer
 
 @router.get("/celebration-wall")
 async def get_celebration_wall():
-    projects = await db.projects.find({"stage": "completed"}).sort("created_at", -1).to_list(50)
+    projects = await db.projects.find({"stage": "completed", "hidden": {"$ne": True}}).sort("created_at", -1).to_list(50)
     user_ids = list({project["user_id"] for project in projects})
     users = await db.users.find(
         {"_id": {"$in": [ObjectId(user_id_value) for user_id_value in user_ids]}},
