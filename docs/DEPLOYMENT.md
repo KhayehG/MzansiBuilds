@@ -18,6 +18,8 @@ Render already uses `render.yaml` at the repository root.
 - `FRONTEND_URL=<your Vercel production URL>`
 - `CORS_ORIGINS=<comma-separated allowed frontend origins>`
 - `ADMIN_PASSWORD=<strong admin password>`
+- `RESEND_API_KEY=<Resend API key>`
+- `RESEND_FROM_EMAIL=<verified sender email>`
 
 ### Optional but recommended
 
