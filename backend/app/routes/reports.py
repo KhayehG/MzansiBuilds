@@ -113,12 +113,61 @@ async def get_all_reports(
     enriched = []
     for report in reports:
         report["_id"] = str(report["_id"])
+        reporter = await db.users.find_one(
+            {"_id": ObjectId(report["reported_by_user_id"])} if report.get("reported_by_user_id") else {"_id": None},
+            {"username": 1, "profile_picture_url": 1},
+        )
+        report["reported_by_user"] = (
+            {
+                "id": str(reporter["_id"]),
+                "username": reporter["username"],
+                "profile_picture_url": reporter.get("profile_picture_url"),
+            }
+            if reporter
+            else None
+        )
         if report.get("reported_user_id"):
-            reported_user = await db.users.find_one({"_id": ObjectId(report["reported_user_id"])})
+            reported_user = await db.users.find_one(
+                {"_id": ObjectId(report["reported_user_id"])},
+                {"username": 1, "profile_picture_url": 1},
+            )
             report["reported_user"] = {
                 "id": str(reported_user["_id"]),
                 "username": reported_user["username"],
+                "profile_picture_url": reported_user.get("profile_picture_url"),
             } if reported_user else None
+        if report.get("report_type") == "project" and report.get("reported_item_id"):
+            project = await db.projects.find_one(
+                {"_id": ObjectId(report["reported_item_id"])},
+                {"title": 1, "description": 1, "user_id": 1, "hidden": 1},
+            )
+            report["reported_project"] = (
+                {
+                    "id": str(project["_id"]),
+                    "title": project.get("title", "Untitled project"),
+                    "description": project.get("description", ""),
+                    "user_id": project.get("user_id"),
+                    "hidden": project.get("hidden", False),
+                }
+                if project
+                else None
+            )
+        if report.get("report_type") == "comment" and report.get("reported_item_id"):
+            comment = await db.comments.find_one(
+                {"_id": ObjectId(report["reported_item_id"])},
+                {"content": 1, "project_id": 1, "user_id": 1, "hidden": 1},
+            )
+            report["reported_comment"] = (
+                {
+                    "id": str(comment["_id"]),
+                    "content": comment.get("content", ""),
+                    "project_id": comment.get("project_id"),
+                    "user_id": comment.get("user_id"),
+                    "hidden": comment.get("hidden", False),
+                }
+                if comment
+                else None
+            )
         enriched.append(report)
 
     return {

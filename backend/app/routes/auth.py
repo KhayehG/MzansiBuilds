@@ -51,6 +51,7 @@ async def register(user_data: UserCreate, response: Response):
         "last_seen": None,
         "follower_count": 0,
         "following_count": 0,
+        "role": "user",
         "created_at": utc_now_iso(),
     }
     result = await db.users.insert_one(user_doc)
@@ -65,6 +66,7 @@ async def register(user_data: UserCreate, response: Response):
         "email": email,
         "username": username,
         "bio": user_doc["bio"],
+        "role": user_doc["role"],
         "created_at": user_doc["created_at"],
     }
 
@@ -104,6 +106,7 @@ async def login(user_data: UserLogin, response: Response, request: Request):
         "email": user["email"],
         "username": user["username"],
         "bio": user.get("bio", ""),
+        "role": user.get("role", "user"),
         "created_at": user.get("created_at", ""),
     }
 
@@ -122,6 +125,7 @@ async def get_me(request: Request):
         "email": user["email"],
         "username": user["username"],
         "bio": user.get("bio", ""),
+        "role": user.get("role", "user"),
         "profile_picture_url": user.get("profile_picture_url"),
         "skills": user.get("skills", []),
         "github_url": user.get("github_url"),

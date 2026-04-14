@@ -297,15 +297,28 @@ const Dashboard = () => {
                                         <Link
                                             key={builder.id}
                                             to={`/profile/${builder.id}`}
-                                            className="border-2 border-black bg-white p-3 hover:bg-surface transition-colors"
+                                            className="border-2 border-black bg-white p-3 hover:bg-surface transition-colors flex items-start gap-3"
                                         >
-                                            <p className="font-bold">@{builder.username}</p>
-                                            <p className="text-sm text-text-secondary line-clamp-2 mt-1">
-                                                {builder.bio || 'No bio yet.'}
-                                            </p>
-                                            <p className="text-xs font-mono mt-2 text-text-secondary">
-                                                {builder.project_count || 0} projects · {builder.completed_count || 0} shipped
-                                            </p>
+                                            {builder.profile_picture_url ? (
+                                                <img
+                                                    src={builder.profile_picture_url}
+                                                    alt={builder.username}
+                                                    className="w-12 h-12 border-2 border-black object-cover shrink-0"
+                                                />
+                                            ) : (
+                                                <div className="w-12 h-12 bg-black text-white border-2 border-black flex items-center justify-center font-bold shrink-0">
+                                                    {builder.username?.[0]?.toUpperCase()}
+                                                </div>
+                                            )}
+                                            <div className="min-w-0">
+                                                <p className="font-bold">@{builder.username}</p>
+                                                <p className="text-sm text-text-secondary line-clamp-2 mt-1">
+                                                    {builder.bio || 'No bio yet.'}
+                                                </p>
+                                                <p className="text-xs font-mono mt-2 text-text-secondary">
+                                                    {builder.project_count || 0} projects · {builder.completed_count || 0} shipped
+                                                </p>
+                                            </div>
                                         </Link>
                                     ))}
                                 </div>
