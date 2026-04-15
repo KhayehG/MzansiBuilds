@@ -14,7 +14,7 @@ const ForgotPassword = () => {
         e.preventDefault();
         setIsLoading(true);
         try {
-            await axios.post(`${API_URL}/auth/forgot-password`, { email });
+            await axios.post(`${API_URL}/api/auth/forgot-password`, { email });
             setSubmitted(true);
         } catch {
             // Show generic message to avoid leaking info
