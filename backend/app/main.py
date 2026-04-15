@@ -70,6 +70,10 @@ for router in (
 ):
     app.include_router(router, prefix="/api")
 
+# Expose auth routes at both /auth and /api/auth so older frontend builds or stale deployments
+# that still target /auth/... continue to work during rollout.
+app.include_router(auth.router, prefix="")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
