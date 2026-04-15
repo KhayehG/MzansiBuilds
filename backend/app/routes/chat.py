@@ -39,6 +39,8 @@ async def _serialize_conversation(conversation: dict, user_id: str) -> dict:
             "is_read": False,
         }
     )
+    serialized["last_message"] = conversation.get("last_message_content")
+    serialized["last_message_at"] = conversation.get("updated_at") or conversation.get("created_at")
 
     if serialized.get("type") == ConversationType.private.value:
         other_participant_id = next(
@@ -131,11 +133,14 @@ async def create_conversation(payload: ConversationCreate, request: Request):
                 existing["participants"] = participants
             return await _serialize_conversation(existing, user_id)
 
+    now = utc_now_iso()
     doc = {
         "type": payload.type,
         "project_id": payload.project_id,
-        "created_at": utc_now_iso(),
+        "created_at": now,
+        "updated_at": now,
         "participants": participants if payload.type == ConversationType.project and payload.project_id else [user_id],
+        "last_message_content": None,
     }
     result = await db.conversations.insert_one(doc)
     doc["_id"] = result.inserted_id
@@ -159,11 +164,14 @@ async def create_or_get_dm(target_user_id: str, request: Request):
     if existing:
         return await _serialize_conversation(existing, user_id)
 
+    now = utc_now_iso()
     doc = {
         "type": "private",
         "project_id": None,
         "participants": [user_id, target_user_id],
-        "created_at": utc_now_iso(),
+        "created_at": now,
+        "updated_at": now,
+        "last_message_content": None,
     }
     result = await db.conversations.insert_one(doc)
     doc["_id"] = result.inserted_id
@@ -176,7 +184,11 @@ async def get_user_conversations(request: Request):
     user_id = _current_user_id(current_user)
     convs = await db.conversations.find({"participants": user_id}).to_list(100)
     serialized = [await _serialize_conversation(conversation, user_id) for conversation in convs]
-    return sorted(serialized, key=lambda conversation: conversation.get("created_at", ""), reverse=True)
+    return sorted(
+        serialized,
+        key=lambda conversation: conversation.get("last_message_at") or conversation.get("created_at", ""),
+        reverse=True,
+    )
 
 
 # --- Message Endpoints ---
@@ -197,17 +209,32 @@ async def send_message(payload: MessageCreate, request: Request):
     elif user_id not in participants:
         raise HTTPException(status_code=403, detail="Not a participant of this conversation.")
 
+    now = utc_now_iso()
     doc = {
         "conversation_id": payload.conversation_id,
         "sender_id": user_id,
         "sender_username": current_user.get("username", ""),
         "content": payload.content,
         "is_read": False,
-        "created_at": utc_now_iso(),
+        "created_at": now,
     }
     result = await db.messages.insert_one(doc)
     doc["id"] = str(result.inserted_id)
     doc.pop("_id", None)
+
+    preview = payload.content.strip()
+    if len(preview) > 80:
+        preview = preview[:77] + "..."
+
+    await db.conversations.update_one(
+        {"_id": ObjectId(payload.conversation_id)},
+        {
+            "$set": {
+                "updated_at": now,
+                "last_message_content": preview,
+            }
+        },
+    )
 
     # Broadcast real-time event to all participants
     for participant_id in participants:
