@@ -12,8 +12,13 @@ const ProjectChat = ({ projectId, canChat }) => {
   const [conversationId, setConversationId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [loading, setLoading] = useState(true);
   const messagesEndRef = useRef(null);
+
+  const emojis = ['😊', '😂', '👍', '❤️', '🔥', '🎉', '😮', '😢', '🤔', '✅'];
+
+  const addEmoji = (emoji) => setInput((prev) => prev + emoji);
 
   // Get or create the project conversation, then load messages
   useEffect(() => {
@@ -90,13 +95,39 @@ const ProjectChat = ({ projectId, canChat }) => {
         ))}
         <div ref={messagesEndRef} />
       </div>
-      <form onSubmit={handleSend} className="flex border-t-2 border-black">
-        <input
-          className="flex-1 p-2 outline-none text-sm"
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          placeholder="Type a message..."
-        />
+      <form onSubmit={handleSend} className="flex border-t-2 border-black relative items-center">
+        <button
+          type="button"
+          onClick={() => setShowEmojiPicker(prev => !prev)}
+          className="px-3 text-lg bg-surface border-r-2 border-black"
+          aria-label="Toggle emoji picker"
+        >
+          😊
+        </button>
+        <div className="flex-1 relative">
+          <input
+            className="w-full p-2 outline-none text-sm"
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            placeholder="Type a message..."
+          />
+          {showEmojiPicker && (
+            <div className="absolute left-0 bottom-full mb-2 z-10 w-full rounded border border-black bg-white p-2 shadow-lg">
+              <div className="grid grid-cols-5 gap-2">
+                {emojis.map((emoji) => (
+                  <button
+                    key={emoji}
+                    type="button"
+                    onClick={() => addEmoji(emoji)}
+                    className="rounded p-2 text-lg hover:bg-gray-100"
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
         <button type="submit" className="p-3 bg-primary text-white" disabled={!input.trim()}>
           <Send className="w-4 h-4" />
         </button>

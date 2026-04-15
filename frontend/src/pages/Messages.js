@@ -17,14 +17,27 @@ const Messages = () => {
   const [loadingConvs, setLoadingConvs] = useState(true);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [newDmUsername, setNewDmUsername] = useState('');
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const messagesEndRef = useRef(null);
+
+  const emojis = ['😊', '😂', '👍', '❤️', '🔥', '🎉', '😮', '😢', '🤔', '✅'];
+
+  const sortConversations = (list) => [...list].sort((a, b) => {
+    const aTime = a.last_message_at || a.created_at || '';
+    const bTime = b.last_message_at || b.created_at || '';
+    return bTime.localeCompare(aTime);
+  });
+
+  const addEmoji = (emoji) => {
+    setInput((prev) => prev + emoji);
+  };
 
   useEffect(() => {
     if (!isAuthenticated) return;
     const fetchConvs = async () => {
       try {
         const res = await axios.get(`${API_URL}/api/chat/conversations`, { withCredentials: true });
-        setConversations(res.data || []);
+        setConversations(sortConversations(res.data || []));
       } catch (e) {
         setConversations([]);
       } finally {
@@ -48,12 +61,28 @@ const Messages = () => {
 
   useEffect(() => {
     if (!lastMessage) return;
-    if (lastMessage.type === 'chat_message' && lastMessage.conversation_id === activeConv?.id) {
-      setMessages(prev => {
-        const incomingMessage = lastMessage.message || lastMessage;
-        if (prev.some(m => m.id === incomingMessage.id)) return prev;
-        return [...prev, incomingMessage];
+    if (lastMessage.type === 'chat_message') {
+      const incomingMessage = lastMessage.message || lastMessage;
+      setConversations(prev => {
+        const hasConv = prev.some(c => c.id === lastMessage.conversation_id);
+        const updated = prev.map(conv => {
+          if (conv.id !== lastMessage.conversation_id) return conv;
+          return {
+            ...conv,
+            last_message: incomingMessage.content,
+            last_message_at: incomingMessage.created_at,
+          };
+        });
+        return hasConv ? sortConversations(updated) : prev;
       });
+
+      if (lastMessage.conversation_id === activeConv?.id) {
+        setMessages(prev => {
+          const incomingMessage = lastMessage.message || lastMessage;
+          if (prev.some(m => m.id === incomingMessage.id)) return prev;
+          return [...prev, incomingMessage];
+        });
+      }
     }
   }, [lastMessage, activeConv]);
 
@@ -84,7 +113,7 @@ const Messages = () => {
       const found = usersRes.data.find(u => u.username.toLowerCase() === newDmUsername.trim().toLowerCase());
       if (!found) { toast.error('User not found'); return; }
       const convRes = await axios.post(`${API_URL}/api/chat/conversations/dm?target_user_id=${found.id}`, {}, { withCredentials: true });
-      setConversations(prev => prev.some(c => c.id === convRes.data.id) ? prev : [convRes.data, ...prev]);
+      setConversations(prev => sortConversations(prev.some(c => c.id === convRes.data.id) ? prev : [convRes.data, ...prev]));
       setActiveConv(convRes.data);
       setNewDmUsername('');
     } catch (e) {
@@ -130,12 +159,17 @@ const Messages = () => {
                   onClick={() => setActiveConv(conv)}
                   className={`w-full text-left px-4 py-3 text-sm font-bold border-b border-gray-200 hover:bg-white transition-colors ${activeConv?.id === conv.id ? 'bg-white border-l-4 border-l-primary' : ''}`}
                 >
-                  {getConvLabel(conv)}
-                  {conv.unread_count > 0 && (
-                    <span className="ml-2 inline-flex min-w-[20px] h-5 items-center justify-center rounded-full border border-black bg-primary px-1 text-[10px] text-white">
-                      {conv.unread_count}
-                    </span>
-                  )}
+                  <div className="flex items-center justify-between gap-2">
+                    <span>{getConvLabel(conv)}</span>
+                    {conv.unread_count > 0 && (
+                      <span className="inline-flex min-w-[20px] h-5 items-center justify-center rounded-full border border-black bg-primary px-1 text-[10px] text-white">
+                        {conv.unread_count}
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-1 text-xs text-text-secondary truncate">
+                    {conv.last_message || 'No messages yet.'}
+                  </div>
                 </button>
               ))}
             </div>
@@ -167,13 +201,39 @@ const Messages = () => {
                   ))}
                   <div ref={messagesEndRef} />
                 </div>
-                <form onSubmit={handleSend} className="flex border-t-2 border-black">
-                  <input
-                    className="flex-1 p-3 outline-none text-sm"
-                    value={input}
-                    onChange={e => setInput(e.target.value)}
-                    placeholder="Type a message..."
-                  />
+                <form onSubmit={handleSend} className="flex border-t-2 border-black relative items-center">
+                  <button
+                    type="button"
+                    onClick={() => setShowEmojiPicker(prev => !prev)}
+                    className="px-3 text-lg bg-surface border-r-2 border-black"
+                    aria-label="Toggle emoji picker"
+                  >
+                    😊
+                  </button>
+                  <div className="flex-1 relative">
+                    <input
+                      className="w-full p-3 outline-none text-sm"
+                      value={input}
+                      onChange={e => setInput(e.target.value)}
+                      placeholder="Type a message..."
+                    />
+                    {showEmojiPicker && (
+                      <div className="absolute left-0 bottom-full mb-2 z-10 w-full rounded border border-black bg-white p-2 shadow-lg">
+                        <div className="grid grid-cols-5 gap-2">
+                          {emojis.map((emoji) => (
+                            <button
+                              key={emoji}
+                              type="button"
+                              onClick={() => addEmoji(emoji)}
+                              className="rounded p-2 text-lg hover:bg-gray-100"
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                   <button type="submit" className="px-4 bg-primary text-white" disabled={!input.trim()}>
                     <Send className="w-5 h-5" />
                   </button>
